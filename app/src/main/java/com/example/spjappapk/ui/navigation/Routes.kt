@@ -22,4 +22,10 @@ sealed interface Route : NavKey {
 
     @Serializable
     data object Dashboard : Route
+
+    @Serializable
+    data object PendingSync : Route
+
+    @Serializable
+    data object Notifications : Route
 }

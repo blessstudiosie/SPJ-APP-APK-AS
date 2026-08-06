@@ -8,6 +8,8 @@ import androidx.compose.material.icons.filled.Inventory
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -27,6 +29,10 @@ import com.example.spjappapk.ui.inventory.InventoryViewModel
 import com.example.spjappapk.ui.navigation.Route
 import com.example.spjappapk.ui.sales.SalesLedgerScreen
 import com.example.spjappapk.ui.sales.SalesViewModel
+import com.example.spjappapk.ui.notifications.NotificationScreen
+import com.example.spjappapk.ui.notifications.NotificationViewModel
+import com.example.spjappapk.ui.sync.PendingSyncScreen
+import com.example.spjappapk.ui.sync.PendingSyncViewModel
 import com.example.spjappapk.ui.visits.VisitsScreen
 import com.example.spjappapk.ui.visits.VisitsViewModel
 import kotlinx.coroutines.launch
@@ -116,6 +122,32 @@ fun HomeScreen(
                     icon = { Icon(Icons.Default.LocationOn, null) },
                     modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
                 )
+                NavigationDrawerItem(
+                    label = { Text("Antrean Sync") },
+                    selected = currentRoute == Route.PendingSync,
+                    onClick = { 
+                        scope.launch { drawerState.close() }
+                        if (currentRoute != Route.PendingSync) {
+                            backStack.clear()
+                            backStack.add(Route.PendingSync)
+                        }
+                    },
+                    icon = { Icon(Icons.Default.Sync, null) },
+                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                )
+                NavigationDrawerItem(
+                    label = { Text("Notifikasi & Feedback") },
+                    selected = currentRoute == Route.Notifications,
+                    onClick = { 
+                        scope.launch { drawerState.close() }
+                        if (currentRoute != Route.Notifications) {
+                            backStack.clear()
+                            backStack.add(Route.Notifications)
+                        }
+                    },
+                    icon = { Icon(Icons.Default.Notifications, null) },
+                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                )
                 
                 Spacer(modifier = Modifier.weight(1f))
                 
@@ -142,6 +174,7 @@ fun HomeScreen(
                             is Route.Inventory -> "Inventory"
                             is Route.Sales -> "Sales"
                             is Route.Visits -> "Visits"
+                            is Route.PendingSync -> "Antrean Sync"
                             else -> "SPJ App"
                         })
                     },
@@ -192,6 +225,18 @@ fun HomeScreen(
                             VisitsViewModel(app.visitRepository, app.customerRepository)
                         }
                         VisitsScreen(viewModel)
+                    }
+                    is Route.PendingSync -> NavEntry(r) {
+                        val viewModel: PendingSyncViewModel = viewModel {
+                            PendingSyncViewModel(app.salesRepository, app.visitRepository)
+                        }
+                        PendingSyncScreen(viewModel)
+                    }
+                    is Route.Notifications -> NavEntry(r) {
+                        val viewModel: NotificationViewModel = viewModel {
+                            NotificationViewModel(app.salesRepository)
+                        }
+                        NotificationScreen(viewModel)
                     }
                     else -> NavEntry(r) {
                         Text("Unknown Route")

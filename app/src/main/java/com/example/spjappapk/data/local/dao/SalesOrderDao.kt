@@ -18,6 +18,12 @@ interface SalesOrderDao {
     @Query("SELECT * FROM sales_orders WHERE status = 'PENDING'")
     suspend fun getUnsyncedOrders(): List<SalesOrder>
 
-    @Query("UPDATE sales_orders SET status = :status WHERE id = :id")
-    suspend fun updateSyncStatus(id: Long, status: String)
+    @Query("SELECT * FROM sales_orders WHERE remote_id IS NOT NULL AND status = 'PROCESSED'")
+    suspend fun getOrdersAwaitingFeedback(): List<SalesOrder>
+
+    @Query("UPDATE sales_orders SET status = :status, remote_id = :remoteId, admin_notes = :notes WHERE id = :id")
+    suspend fun updateOrderStatus(id: Long, status: String, remoteId: String?, notes: String? = null)
+
+    @Query("UPDATE sales_orders SET status = :status, admin_notes = :notes WHERE remote_id = :remoteId")
+    suspend fun updateFeedbackByRemoteId(remoteId: String, status: String, notes: String?)
 }

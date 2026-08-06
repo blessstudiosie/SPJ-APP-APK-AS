@@ -10,6 +10,8 @@ import com.example.spjappapk.data.remote.SupabaseClient
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.storage.storage
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import java.io.File
 
 class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
@@ -80,19 +82,52 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             val unsyncedOrders = salesOrderDao.getUnsyncedOrders()
             unsyncedOrders.forEach { order ->
                 try {
-                    SupabaseClient.client.postgrest["sales_orders_queue"].insert(
+                    val response = SupabaseClient.client.postgrest["sales_orders_queue"].insert(
                         mapOf(
                             "sales_person_id" to order.salesPersonId,
                             "customer_id" to order.customerId,
                             "order_date" to order.orderDate,
                             "notes" to order.notes,
-                            "details" to Json.parseToJsonElement(order.details), // Parse string to JSON object
+                            "details" to Json.parseToJsonElement(order.details),
                             "status" to "pending"
                         )
-                    )
-                    salesOrderDao.updateSyncStatus(order.id, "PROCESSED")
+                    ) {
+                        select() // Get the inserted row back
+                    }
+                    
+                    // Parse response to get the remote UUID
+                    val insertedData = Json.parseToJsonElement(response.data).jsonArray
+                    if (insertedData.isNotEmpty()) {
+                        val remoteId = insertedData[0].jsonObject["id"]?.toString()?.replace("\"", "")
+                        salesOrderDao.updateOrderStatus(order.id, "PROCESSED", remoteId)
+                    }
                 } catch (e: Exception) {
                     e.printStackTrace()
+                }
+            }
+
+            // 4. PULL: Check for Admin Feedback (Status Updates)
+            val ordersToCheck = salesOrderDao.getOrdersAwaitingFeedback()
+            if (ordersToCheck.isNotEmpty()) {
+                val remoteIds = ordersToCheck.map { it.remoteId!! }
+                val updates = SupabaseClient.client.postgrest["sales_orders_queue"]
+                    .select {
+                        filter {
+                            isIn("id", remoteIds)
+                            neq("status", "pending") // Only get those processed by admin
+                        }
+                    }
+                
+                val updateData = Json.parseToJsonElement(updates.data).jsonArray
+                updateData.forEach { element ->
+                    val obj = element.jsonObject
+                    val rId = obj["id"]?.toString()?.replace("\"", "") ?: ""
+                    val serverStatus = obj["status"]?.toString()?.replace("\"", "")?.uppercase() ?: ""
+                    val adminNotes = obj["error_message"]?.toString()?.replace("\"", "") // Map error_message to notes
+                    
+                    if (serverStatus == "PROCESSED" || serverStatus == "APPROVED" || serverStatus == "REJECTED" || serverStatus == "PARTIALLY_APPROVED") {
+                        salesOrderDao.updateFeedbackByRemoteId(rId, serverStatus, adminNotes)
+                    }
                 }
             }
 
