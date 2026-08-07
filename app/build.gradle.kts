@@ -7,17 +7,18 @@ plugins {
 
 android {
     namespace = "com.example.spjappapk"
-    compileSdk = 37
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.example.spjappapk"
         minSdk = 24
-        targetSdk = 37
+        targetSdk = 35
         versionCode = 3
         versionName = "1.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
+
 
     buildTypes {
         release {

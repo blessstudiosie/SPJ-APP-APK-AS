@@ -13,8 +13,9 @@ import com.example.spjappapk.data.local.entities.Inventory
 import com.example.spjappapk.data.local.entities.SalesOrder
 import com.example.spjappapk.data.local.entities.Visit
 
-@Database(entities = [Visit::class, Inventory::class, SalesOrder::class, Customer::class], version = 4)
+@Database(entities = [Visit::class, Inventory::class, SalesOrder::class, Customer::class], version = 4, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
+
     abstract fun visitDao(): VisitDao
     abstract fun inventoryDao(): InventoryDao
     abstract fun salesOrderDao(): SalesOrderDao
