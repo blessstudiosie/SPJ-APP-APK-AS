@@ -39,7 +39,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                 e.printStackTrace()
             }
 
-            // 2. PUSH: Sync Visits as Requests (Pesan Kunjungan)
+            // 2. PUSH: Sync Visits to visit_logs_queue
             val unsyncedVisits = visitDao.getUnsyncedVisits()
             unsyncedVisits.forEach { visit ->
                 try {
@@ -54,27 +54,30 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                         }
                     }
 
-                    // Membungkus data kunjungan ke dalam payload untuk antrian
-                    val payload = mapOf(
-                        "customer_id" to visit.customerId,
-                        "location_lat" to visit.locationLat,
-                        "location_lng" to visit.locationLng,
+                    val insertData = mapOf(
+                        "sales_person_id" to visit.userId,
+                        "sales_person_name" to visit.salesPersonName,
+                        "customer_id" to visit.customerId.ifBlank { null },
+                        "customer_name" to visit.customerName,
+                        "is_new_customer" to visit.isNewCustomer,
+                        "latitude" to visit.locationLat,
+                        "longitude" to visit.locationLng,
                         "photo_url" to photoUrl,
-                        "timestamp" to visit.timestamp
+                        "notes" to visit.notes,
+                        "status" to "PENDING"
                     )
 
-                    // Mengirim sebagai pesan permintaan ke tabel visit_logs_queue
-                    SupabaseClient.client.postgrest["visit_logs_queue"].insert(
-                        mapOf(
-                            "sales_person_id" to visit.userId,
-                            "payload" to payload,
-                            "status" to "pending"
-                        )
-                    )
-                    visitDao.updateSyncStatus(visit.id, "SYNCED", null)
+                    val response = SupabaseClient.client.postgrest["visit_logs_queue"].insert(insertData) {
+                        select()
+                    }
+
+                    val insertedData = Json.parseToJsonElement(response.data).jsonArray
+                    if (insertedData.isNotEmpty()) {
+                        val remoteId = insertedData[0].jsonObject["id"]?.toString()?.replace("\"", "")
+                        visitDao.updateSyncStatus(visit.id, "PROCESSED", remoteId)
+                    }
                 } catch (e: Exception) {
                     e.printStackTrace()
-                    // If one visit fails, we continue to others but don't mark this one as synced
                 }
             }
 
@@ -82,20 +85,20 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             val unsyncedOrders = salesOrderDao.getUnsyncedOrders()
             unsyncedOrders.forEach { order ->
                 try {
-                    val response = SupabaseClient.client.postgrest["sales_orders_queue"].insert(
-                        mapOf(
-                            "sales_person_id" to order.salesPersonId,
-                            "customer_id" to order.customerId,
-                            "order_date" to order.orderDate,
-                            "notes" to order.notes,
-                            "details" to Json.parseToJsonElement(order.details),
-                            "status" to "pending"
-                        )
-                    ) {
-                        select() // Get the inserted row back
+                    val insertData = mapOf(
+                        "sales_person_id" to order.salesPersonId,
+                        "customer_id" to order.customerId.ifBlank { null },
+                        "customer_name" to order.customerName,
+                        "items_json" to order.details,
+                        "total_amount" to order.totalAmount,
+                        "notes" to order.notes,
+                        "status" to "PENDING"
+                    )
+
+                    val response = SupabaseClient.client.postgrest["sales_orders_queue"].insert(insertData) {
+                        select()
                     }
-                    
-                    // Parse response to get the remote UUID
+
                     val insertedData = Json.parseToJsonElement(response.data).jsonArray
                     if (insertedData.isNotEmpty()) {
                         val remoteId = insertedData[0].jsonObject["id"]?.toString()?.replace("\"", "")
@@ -106,27 +109,63 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                 }
             }
 
-            // 4. PULL: Check for Admin Feedback (Status Updates)
+            // 4. PULL: Check for Admin Feedback for Sales Orders
             val ordersToCheck = salesOrderDao.getOrdersAwaitingFeedback()
             if (ordersToCheck.isNotEmpty()) {
-                val remoteIds = ordersToCheck.map { it.remoteId!! }
-                val updates = SupabaseClient.client.postgrest["sales_orders_queue"]
-                    .select {
-                        filter {
-                            isIn("id", remoteIds)
-                            neq("status", "pending") // Only get those processed by admin
+                val remoteIds = ordersToCheck.mapNotNull { it.remoteId }
+                if (remoteIds.isNotEmpty()) {
+                    try {
+                        val updates = SupabaseClient.client.postgrest["sales_orders_queue"]
+                            .select {
+                                filter {
+                                    isIn("id", remoteIds)
+                                    neq("status", "PENDING")
+                                }
+                            }
+
+                        val updateData = Json.parseToJsonElement(updates.data).jsonArray
+                        updateData.forEach { element ->
+                            val obj = element.jsonObject
+                            val rId = obj["id"]?.toString()?.replace("\"", "") ?: ""
+                            val serverStatus = obj["status"]?.toString()?.replace("\"", "")?.uppercase() ?: ""
+                            val notes = obj["notes"]?.toString()?.replace("\"", "")
+
+                            if (serverStatus == "APPROVED" || serverStatus == "REJECTED") {
+                                salesOrderDao.updateFeedbackByRemoteId(rId, serverStatus, notes)
+                            }
                         }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
                     }
-                
-                val updateData = Json.parseToJsonElement(updates.data).jsonArray
-                updateData.forEach { element ->
-                    val obj = element.jsonObject
-                    val rId = obj["id"]?.toString()?.replace("\"", "") ?: ""
-                    val serverStatus = obj["status"]?.toString()?.replace("\"", "")?.uppercase() ?: ""
-                    val adminNotes = obj["error_message"]?.toString()?.replace("\"", "") // Map error_message to notes
-                    
-                    if (serverStatus == "PROCESSED" || serverStatus == "APPROVED" || serverStatus == "REJECTED" || serverStatus == "PARTIALLY_APPROVED") {
-                        salesOrderDao.updateFeedbackByRemoteId(rId, serverStatus, adminNotes)
+                }
+            }
+
+            // 5. PULL: Check for Admin Feedback for Visits
+            val visitsToCheck = visitDao.getVisitsAwaitingFeedback()
+            if (visitsToCheck.isNotEmpty()) {
+                val remoteIds = visitsToCheck.mapNotNull { it.remoteId }
+                if (remoteIds.isNotEmpty()) {
+                    try {
+                        val updates = SupabaseClient.client.postgrest["visit_logs_queue"]
+                            .select {
+                                filter {
+                                    isIn("id", remoteIds)
+                                    neq("status", "PENDING")
+                                }
+                            }
+
+                        val updateData = Json.parseToJsonElement(updates.data).jsonArray
+                        updateData.forEach { element ->
+                            val obj = element.jsonObject
+                            val rId = obj["id"]?.toString()?.replace("\"", "") ?: ""
+                            val serverStatus = obj["status"]?.toString()?.replace("\"", "")?.uppercase() ?: ""
+
+                            if (serverStatus == "APPROVED" || serverStatus == "REJECTED") {
+                                visitDao.updateSyncStatusByRemoteId(rId, serverStatus)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
                     }
                 }
             }

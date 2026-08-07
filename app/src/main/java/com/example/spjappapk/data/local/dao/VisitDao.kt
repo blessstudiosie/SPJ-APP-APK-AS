@@ -18,6 +18,12 @@ interface VisitDao {
     @Query("SELECT * FROM visits WHERE sync_status = 'PENDING'")
     suspend fun getUnsyncedVisits(): List<Visit>
 
+    @Query("SELECT * FROM visits WHERE remote_id IS NOT NULL AND sync_status = 'PROCESSED'")
+    suspend fun getVisitsAwaitingFeedback(): List<Visit>
+
     @Query("UPDATE visits SET sync_status = :status, remote_id = :remoteId WHERE id = :id")
     suspend fun updateSyncStatus(id: Long, status: String, remoteId: String?)
+
+    @Query("UPDATE visits SET sync_status = :status WHERE remote_id = :remoteId")
+    suspend fun updateSyncStatusByRemoteId(remoteId: String, status: String)
 }

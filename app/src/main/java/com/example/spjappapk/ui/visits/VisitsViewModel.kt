@@ -24,15 +24,28 @@ class VisitsViewModel(
     val customers: StateFlow<List<Customer>> = customerRepository.allCustomers
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    fun addVisit(customerId: String, lat: Double, lng: Double, photoPath: String?) {
+    fun addVisit(
+        customerId: String,
+        customerName: String,
+        salesPersonName: String,
+        isNewCustomer: Boolean,
+        lat: Double,
+        lng: Double,
+        photoPath: String?,
+        notes: String?
+    ) {
         viewModelScope.launch {
             val userId = SupabaseClient.client.auth.currentUserOrNull()?.id ?: "anonymous"
             val visit = Visit(
                 userId = userId,
+                salesPersonName = salesPersonName,
                 customerId = customerId,
+                customerName = customerName,
+                isNewCustomer = isNewCustomer,
                 locationLat = lat,
                 locationLng = lng,
                 photoPath = photoPath,
+                notes = notes,
                 syncStatus = "PENDING"
             )
             repository.insertVisit(visit)
