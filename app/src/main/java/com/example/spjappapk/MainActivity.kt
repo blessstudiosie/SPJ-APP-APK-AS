@@ -44,7 +44,8 @@ class MainActivity : ComponentActivity() {
 fun MainApp(authViewModel: AuthViewModel) {
     val user by authViewModel.user.collectAsState()
     val isInitialLoading by authViewModel.isInitialLoading.collectAsState()
-    
+    val needsPasswordChange by authViewModel.needsPasswordChange.collectAsState()
+
     if (isInitialLoading) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
@@ -52,13 +53,26 @@ fun MainApp(authViewModel: AuthViewModel) {
         return
     }
 
-    val backStack = rememberNavBackStack(
-        if (user != null) Route.Home else Route.Login
-    )
+    // Tentukan route awal berdasarkan status login
+    // Jika perlu ganti password, tetap di Login tapi dengan form ganti password
+    val targetRoute = if (user != null && !needsPasswordChange) Route.Home else Route.Login
+    
+    val backStack = rememberNavBackStack(targetRoute)
 
-    LaunchedEffect(user) {
-        backStack.clear()
-        backStack.add(if (user != null) Route.Home else Route.Login)
+    LaunchedEffect(user, needsPasswordChange) {
+        val current = backStack.lastOrNull()
+        if (current != targetRoute) {
+            // Update backstack safely: add new route, then remove old one if needed
+            // to ensure it is never empty during the process.
+            if (backStack.isEmpty()) {
+                backStack.add(targetRoute)
+            } else {
+                backStack.add(targetRoute)
+                while (backStack.size > 1) {
+                    backStack.removeAt(0)
+                }
+            }
+        }
     }
 
     NavDisplay(
@@ -69,8 +83,7 @@ fun MainApp(authViewModel: AuthViewModel) {
             }
         }
     ) { route ->
-        val r = route as Route
-        when (r) {
+        when (val r = route as Route) {
             is Route.Login -> NavEntry(r) {
                 LoginScreen(authViewModel = authViewModel)
             }
@@ -83,12 +96,15 @@ fun MainApp(authViewModel: AuthViewModel) {
                 )
             }
             else -> NavEntry(r) {
-                // Handle other routes if they are somehow reached from top level
-                // or redirect to Home
-                Text("Redirecting...")
+                // Redirect ke Dashboard jika route tidak dikenal di level ini
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
                 LaunchedEffect(Unit) {
-                    backStack.clear()
-                    backStack.add(Route.Home)
+                    if (backStack.lastOrNull() != targetRoute) {
+                        backStack.clear()
+                        backStack.add(targetRoute)
+                    }
                 }
             }
         }

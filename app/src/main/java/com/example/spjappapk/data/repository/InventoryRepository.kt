@@ -12,14 +12,13 @@ class InventoryRepository(
     val allInventory: Flow<List<Inventory>> = inventoryDao.getAllInventory()
 
     suspend fun refreshInventory() {
-        try {
-            // Fetch from Supabase table "products" as defined in gemini.md
-            val remoteData = supabaseClient.postgrest["products"].select().decodeList<Inventory>()
-            if (remoteData.isNotEmpty()) {
-                inventoryDao.insertAll(remoteData)
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
+        android.util.Log.d("InventoryRepo", "Refreshing inventory from 'products' table...")
+        // Fetch from Supabase table "products" as defined in gemini.md
+        val remoteData = supabaseClient.postgrest["products"].select().decodeList<Inventory>()
+        android.util.Log.d("InventoryRepo", "Fetched ${remoteData.size} items")
+        if (remoteData.isNotEmpty()) {
+            inventoryDao.insertAll(remoteData)
+            android.util.Log.d("InventoryRepo", "Inserted items into local DB")
         }
     }
 }

@@ -161,6 +161,14 @@ fun HomeScreen(
                     icon = { Icon(Icons.Default.Logout, null) },
                     modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
                 )
+
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "v${com.example.spjappapk.BuildConfig.VERSION_NAME}",
+                    modifier = Modifier.padding(16.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                )
             }
         }
     ) {
@@ -224,7 +232,7 @@ fun HomeScreen(
                         val viewModel: VisitsViewModel = viewModel {
                             VisitsViewModel(app.visitRepository, app.customerRepository)
                         }
-                        VisitsScreen(viewModel)
+                        VisitsScreen(viewModel, currentUser?.name ?: "Unknown")
                     }
                     is Route.PendingSync -> NavEntry(r) {
                         val viewModel: PendingSyncViewModel = viewModel {

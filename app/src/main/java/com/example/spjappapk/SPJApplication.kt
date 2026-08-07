@@ -17,6 +17,13 @@ class SPJApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        
+        // Setup global error handling for easier debugging on physical devices
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            android.util.Log.e("SPJ_FATAL", "Uncaught exception on thread ${thread.name}", throwable)
+            // Default behavior will still show the "App kept stopping" dialog
+        }
+
         // Memulai sinkronisasi berkala setiap jam
         SyncManager.schedulePeriodicSync(this)
     }

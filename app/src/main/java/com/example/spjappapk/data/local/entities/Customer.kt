@@ -9,8 +9,11 @@ import kotlinx.serialization.Serializable
 @Entity(tableName = "customers")
 @Serializable
 data class Customer(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    @SerialName("remote_id") @ColumnInfo(name = "remote_id") val remoteId: String, // UUID from Supabase
+    @PrimaryKey
+    @SerialName("id") 
+    @ColumnInfo(name = "remote_id") 
+    val remoteId: String, // UUID from Supabase "id" column
+    
     val name: String,
     val address: String? = null,
     val phone: String? = null

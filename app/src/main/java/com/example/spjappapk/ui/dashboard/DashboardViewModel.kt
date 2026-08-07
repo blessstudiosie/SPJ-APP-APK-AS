@@ -24,6 +24,8 @@ data class DashboardUiState(
     val estimatedOmzetToday: Double = 0.0,
     val totalVisitsToday: Int = 0,
     val isLoading: Boolean = false,
+    val isSyncing: Boolean = false,
+    val syncStatus: String = "Idle",
     val userName: String = ""
 )
 
@@ -35,12 +37,21 @@ class DashboardViewModel(
     private val currentUser: SalesPerson?
 ) : ViewModel() {
 
-    private val dateFormatter = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+    private val json = Json { 
+        ignoreUnknownKeys = true 
+        coerceInputValues = true
+    }
+
+    private val _isSyncing = MutableStateFlow(false)
+    private val _syncStatus = MutableStateFlow("Idle")
 
     val uiState: StateFlow<DashboardUiState> = combine(
         salesRepository.allSales,
-        visitRepository.allVisits
-    ) { sales, visits ->
+        visitRepository.allVisits,
+        _isSyncing,
+        _syncStatus
+    ) { sales, visits, isSyncing, syncStatus ->
+        val dateFormatter = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
         val today = dateFormatter.format(Date())
         
         // Filter based on role
@@ -64,7 +75,7 @@ class DashboardViewModel(
         var omzet = 0.0
         salesToday.forEach { order ->
             try {
-                val items = Json.decodeFromString<List<SalesOrderItem>>(order.details)
+                val items = json.decodeFromString<List<SalesOrderItem>>(order.details)
                 omzet += items.sumOf { it.price * it.quantity }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -79,13 +90,14 @@ class DashboardViewModel(
             totalOrdersToday = salesToday.size,
             estimatedOmzetToday = omzet,
             totalVisitsToday = visitsToday,
+            isSyncing = isSyncing,
+            syncStatus = syncStatus,
             userName = currentUser?.name ?: "User"
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DashboardUiState(isLoading = true))
 
     init {
-        sync()
-        refreshMasterData()
+        manualSync() // Start sync immediately
     }
 
     fun sync() {
@@ -95,15 +107,30 @@ class DashboardViewModel(
 
     fun manualSync() {
         viewModelScope.launch {
-            refreshMasterData()
-            sync()
+            _isSyncing.value = true
+            _syncStatus.value = "Menghubungkan ke server..."
+            
+            try {
+                _syncStatus.value = "Mengunduh data stok..."
+                inventoryRepository.refreshInventory()
+                
+                _syncStatus.value = "Mengunduh data pelanggan..."
+                customerRepository.refreshCustomers()
+                
+                _syncStatus.value = "Sinkronisasi antrean..."
+                sync()
+                
+                _syncStatus.value = "Sinkronisasi selesai"
+            } catch (e: Exception) {
+                _syncStatus.value = "Gagal Sinkron: ${e.localizedMessage ?: "Cek koneksi internet"}"
+                android.util.Log.e("DashboardVM", "Sync error", e)
+            } finally {
+                _isSyncing.value = false
+            }
         }
     }
 
     private fun refreshMasterData() {
-        viewModelScope.launch {
-            inventoryRepository.refreshInventory()
-            customerRepository.refreshCustomers()
-        }
+        // Obsolete, use manualSync
     }
 }

@@ -9,7 +9,9 @@ import kotlinx.serialization.Serializable
 @Entity(tableName = "visits")
 @Serializable
 data class Visit(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @PrimaryKey(autoGenerate = true)
+    @kotlinx.serialization.Transient
+    val id: Long = 0,
     @SerialName("remote_id") @ColumnInfo(name = "remote_id") val remoteId: String? = null,
     @SerialName("user_id") @ColumnInfo(name = "user_id") val userId: String,
     @SerialName("sales_person_name") @ColumnInfo(name = "sales_person_name") val salesPersonName: String = "",

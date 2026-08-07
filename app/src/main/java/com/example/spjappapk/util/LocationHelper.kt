@@ -10,17 +10,23 @@ import com.google.android.gms.tasks.CancellationTokenSource
 import kotlinx.coroutines.tasks.await
 
 class LocationHelper(context: Context) {
-    private val fusedLocationClient: FusedLocationProviderClient =
+    private val fusedLocationClient: FusedLocationProviderClient? = try {
         LocationServices.getFusedLocationProviderClient(context)
+    } catch (e: Exception) {
+        android.util.Log.e("LocationHelper", "Failed to initialize FusedLocationProviderClient", e)
+        null
+    }
 
     @SuppressLint("MissingPermission")
     suspend fun getCurrentLocation(): Location? {
+        val client = fusedLocationClient ?: return null
         return try {
-            fusedLocationClient.getCurrentLocation(
+            client.getCurrentLocation(
                 Priority.PRIORITY_HIGH_ACCURACY,
                 CancellationTokenSource().token
             ).await()
         } catch (e: Exception) {
+            android.util.Log.e("LocationHelper", "Error getting current location", e)
             null
         }
     }

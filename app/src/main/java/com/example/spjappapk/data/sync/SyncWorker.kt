@@ -24,18 +24,24 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         val customerDao = database.customerDao()
 
         return try {
+            android.util.Log.d("SyncWorker", "Starting sync work...")
             // 1. PULL: Refresh Master Data (Inventory & Customers)
             try {
+                android.util.Log.d("SyncWorker", "Pulling products...")
                 val remoteProducts = SupabaseClient.client.postgrest["products"].select().decodeList<Inventory>()
+                android.util.Log.d("SyncWorker", "Received ${remoteProducts.size} products")
                 if (remoteProducts.isNotEmpty()) {
                     inventoryDao.insertAll(remoteProducts)
                 }
 
+                android.util.Log.d("SyncWorker", "Pulling customers...")
                 val remoteCustomers = SupabaseClient.client.postgrest["customers"].select().decodeList<Customer>()
+                android.util.Log.d("SyncWorker", "Received ${remoteCustomers.size} customers")
                 if (remoteCustomers.isNotEmpty()) {
                     customerDao.insertAll(remoteCustomers)
                 }
             } catch (e: Exception) {
+                android.util.Log.e("SyncWorker", "Error pulling master data", e)
                 e.printStackTrace()
             }
 

@@ -192,7 +192,14 @@ fun AddSaleDialog(
                         selectedProductForAdd?.let { prod ->
                             val qty = quantityForAdd.toIntOrNull() ?: 0
                             if (qty > 0) {
-                                orderItems.add(SalesOrderItem(prod.remoteId, qty, prod.price))
+                                orderItems.add(
+                                    SalesOrderItem(
+                                        product_id = prod.remoteId,
+                                        product_name = prod.name,
+                                        quantity = qty,
+                                        price = prod.price
+                                    )
+                                )
                                 selectedProductForAdd = null
                                 quantityForAdd = "1"
                             }

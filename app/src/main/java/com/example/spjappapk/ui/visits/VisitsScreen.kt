@@ -30,7 +30,7 @@ import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
 @Composable
-fun VisitsScreen(viewModel: VisitsViewModel) {
+fun VisitsScreen(viewModel: VisitsViewModel, currentSalesPersonName: String) {
     val visits by viewModel.visits.collectAsState()
     val customers by viewModel.customers.collectAsState()
     val context = LocalContext.current
@@ -49,9 +49,13 @@ fun VisitsScreen(viewModel: VisitsViewModel) {
                 val location = locationHelper.getCurrentLocation()
                 viewModel.addVisit(
                     customerId = selectedCustomer!!.remoteId,
+                    customerName = selectedCustomer!!.name,
+                    salesPersonName = currentSalesPersonName,
+                    isNewCustomer = false,
                     lat = location?.latitude ?: 0.0,
                     lng = location?.longitude ?: 0.0,
-                    photoPath = tempPhotoFile?.absolutePath
+                    photoPath = tempPhotoFile?.absolutePath,
+                    notes = null
                 )
             }
         }

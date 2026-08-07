@@ -14,7 +14,8 @@ object SupabaseClient {
 
     val client by lazy {
         try {
-            createSupabaseClient(
+            println("Initializing SupabaseClient with URL: $SUPABASE_URL")
+            val client = createSupabaseClient(
                 supabaseUrl = SUPABASE_URL,
                 supabaseKey = SUPABASE_ANON_KEY
             ) {
@@ -24,12 +25,16 @@ object SupabaseClient {
                     serializer = io.github.jan.supabase.serializer.KotlinXSerializer(Json {
                         ignoreUnknownKeys = true
                         coerceInputValues = true
+                        encodeDefaults = true
                     })
                 }
                 install(Storage)
                 install(Realtime)
             }
+            println("SupabaseClient initialized successfully")
+            client
         } catch (e: Exception) {
+            println("Failed to initialize SupabaseClient: ${e.message}")
             e.printStackTrace()
             throw e
         }

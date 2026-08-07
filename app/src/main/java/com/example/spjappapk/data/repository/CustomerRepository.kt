@@ -12,14 +12,12 @@ class CustomerRepository(
     val allCustomers: Flow<List<Customer>> = customerDao.getAllCustomers()
 
     suspend fun refreshCustomers() {
-        try {
-            // Fetch from Supabase table "customers"
-            val remoteData = supabaseClient.postgrest["customers"].select().decodeList<Customer>()
-            if (remoteData.isNotEmpty()) {
-                customerDao.insertAll(remoteData)
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
+        android.util.Log.d("CustomerRepo", "Refreshing customers...")
+        // Fetch from Supabase table "customers"
+        val remoteData = supabaseClient.postgrest["customers"].select().decodeList<Customer>()
+        android.util.Log.d("CustomerRepo", "Fetched ${remoteData.size} customers")
+        if (remoteData.isNotEmpty()) {
+            customerDao.insertAll(remoteData)
         }
     }
 
