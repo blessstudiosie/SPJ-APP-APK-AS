@@ -26,4 +26,19 @@ interface VisitDao {
 
     @Query("UPDATE visits SET sync_status = :status WHERE remote_id = :remoteId")
     suspend fun updateSyncStatusByRemoteId(remoteId: String, status: String)
+
+    @Query("DELETE FROM visits WHERE id = :id")
+    suspend fun deleteVisit(id: Long)
+
+    @Query("UPDATE visits SET notes = :notes WHERE id = :id")
+    suspend fun updateNotes(id: Long, notes: String)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(visits: List<Visit>)
+
+    @Query("DELETE FROM visits WHERE sync_status = 'SUCCESS' OR sync_status = 'SYNCED'")
+    suspend fun clearSyncedVisits()
+
+    @Query("SELECT MAX(check_in_date) FROM visits")
+    suspend fun getMaxCheckInDate(): String?
 }

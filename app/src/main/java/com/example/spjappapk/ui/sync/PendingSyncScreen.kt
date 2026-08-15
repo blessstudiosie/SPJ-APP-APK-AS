@@ -47,8 +47,8 @@ fun PendingSyncScreen(viewModel: PendingSyncViewModel) {
                         }
                         items(uiState.pendingOrders) { order ->
                             ListItem(
-                                headlineContent = { Text("Order untuk Customer ID: ${order.customerId}") },
-                                supportingContent = { Text("Tanggal: ${order.orderDate}") },
+                                headlineContent = { Text(order.customerName.ifEmpty { "Customer ID: ${order.customerId}" }) },
+                                supportingContent = { Text("Pesanan Tanggal: ${order.orderDate}") },
                                 trailingContent = { Badge { Text("Pending") } }
                             )
                             HorizontalDivider()
@@ -61,7 +61,7 @@ fun PendingSyncScreen(viewModel: PendingSyncViewModel) {
                         }
                         items(uiState.pendingVisits) { visit ->
                             ListItem(
-                                headlineContent = { Text("Kunjungan Toko ID: ${visit.customerId}") },
+                                headlineContent = { Text(visit.customerName.ifEmpty { "Kunjungan ID: ${visit.customerId}" }) },
                                 supportingContent = { Text("Lat: ${visit.locationLat}, Lng: ${visit.locationLng}") },
                                 trailingContent = { Badge { Text("Pending") } }
                             )

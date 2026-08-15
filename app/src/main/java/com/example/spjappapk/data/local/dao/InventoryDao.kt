@@ -14,4 +14,10 @@ interface InventoryDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(inventory: List<Inventory>)
+
+    @Query("DELETE FROM inventory")
+    suspend fun clearAll()
+
+    @Query("SELECT MAX(updated_at) FROM inventory")
+    suspend fun getMaxUpdatedAt(): String?
 }

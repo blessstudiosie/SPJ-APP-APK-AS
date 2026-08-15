@@ -1,8 +1,14 @@
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.google.devtools.ksp)
     alias(libs.plugins.jetbrains.kotlin.plugin.serialization)
+    id("kotlin-parcelize")
 }
 
 android {
@@ -15,6 +21,11 @@ android {
         targetSdk = 37
         versionCode = 4
         versionName = "1.3"
+
+        val sdf = SimpleDateFormat("dd/MM/yy HH:mm", Locale.getDefault())
+        sdf.timeZone = TimeZone.getTimeZone("Asia/Makassar")
+        val timestamp = sdf.format(Date())
+        buildConfigField("String", "BUILD_TIME", "\"$timestamp\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -37,6 +48,10 @@ android {
         compose = true
         buildConfig = true
     }
+}
+
+base {
+    archivesName.set("SPJ_App_v1.3")
 }
 
 dependencies {
@@ -75,6 +90,7 @@ dependencies {
     implementation(libs.kotlinx.serialization.core)
     implementation(libs.kotlinx.serialization.json)
     implementation("io.ktor:ktor-client-okhttp:3.0.1")
+    implementation("io.ktor:ktor-client-android:3.0.1")
     implementation(platform(libs.supabase.bom))
     implementation(libs.supabase.postgrest)
     implementation(libs.supabase.auth)

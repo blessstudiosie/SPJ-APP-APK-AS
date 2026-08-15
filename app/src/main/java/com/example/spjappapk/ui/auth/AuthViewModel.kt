@@ -16,6 +16,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import java.math.BigInteger
+import java.security.MessageDigest
 
 @Serializable
 data class SalesPerson(
@@ -57,17 +59,27 @@ class AuthViewModel(private val sessionManager: SessionManager) : ViewModel() {
         }
     }
 
+    private fun md5(input: String): String {
+        val md = MessageDigest.getInstance("MD5")
+        return BigInteger(1, md.digest(input.toByteArray())).toString(16).padStart(32, '0')
+    }
+
     fun login(name: String, passwordRaw: String) {
         viewModelScope.launch {
             _isLoading.value = true
             _error.value = null
             try {
-                // Verifikasi langsung ke tabel sales_persons menggunakan NAMA
+                val passwordMd5 = md5(passwordRaw)
+                
+                // Verifikasi langsung ke tabel sales_persons menggunakan NAMA dan mendukung MD5/Plain
                 val response = SupabaseClient.client.postgrest["sales_persons"]
                     .select {
                         filter {
                             eq("name", name)
-                            eq("password", passwordRaw)
+                            or {
+                                eq("password", passwordRaw)
+                                eq("password", passwordMd5)
+                            }
                         }
                     }
                 

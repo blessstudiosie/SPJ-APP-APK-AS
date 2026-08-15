@@ -16,7 +16,8 @@ import java.util.UUID
 
 class VisitsViewModel(
     private val repository: VisitRepository,
-    private val customerRepository: CustomerRepository
+    private val customerRepository: CustomerRepository,
+    private val currentUser: com.example.spjappapk.ui.auth.SalesPerson?
 ) : ViewModel() {
     val visits: StateFlow<List<Visit>> = repository.allVisits
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -35,9 +36,8 @@ class VisitsViewModel(
         notes: String?
     ) {
         viewModelScope.launch {
-            val userId = SupabaseClient.client.auth.currentUserOrNull()?.id ?: "anonymous"
             val visit = Visit(
-                userId = userId,
+                userId = currentUser?.id ?: "anonymous",
                 salesPersonName = salesPersonName,
                 customerId = customerId,
                 customerName = customerName,
@@ -52,14 +52,38 @@ class VisitsViewModel(
         }
     }
 
-    fun createCustomer(name: String, address: String?) {
+    fun refresh() {
+        viewModelScope.launch {
+            currentUser?.let { repository.refreshVisits(it.id) }
+        }
+    }
+
+    fun createCustomer(name: String, address: String?, ownerName: String?, phone: String?) {
         viewModelScope.launch {
             val newCustomer = Customer(
                 remoteId = UUID.randomUUID().toString(),
                 name = name,
-                address = address
+                address = address,
+                ownerName = ownerName,
+                phone = phone,
+                salesPersonId = currentUser?.id,
+                salesPersonName = currentUser?.name
             )
             customerRepository.addCustomer(newCustomer)
+        }
+    }
+
+    fun deleteVisit(visitId: Long) {
+        viewModelScope.launch {
+            // Check if it's already synced? User might still want to delete local copy
+            // but usually we delete pending ones.
+            repository.deleteVisit(visitId)
+        }
+    }
+
+    fun updateVisitNotes(visitId: Long, newNotes: String) {
+        viewModelScope.launch {
+            repository.updateVisitNotes(visitId, newNotes)
         }
     }
 }

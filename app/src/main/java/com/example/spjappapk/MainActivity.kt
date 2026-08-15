@@ -62,16 +62,9 @@ fun MainApp(authViewModel: AuthViewModel) {
     LaunchedEffect(user, needsPasswordChange) {
         val current = backStack.lastOrNull()
         if (current != targetRoute) {
-            // Update backstack safely: add new route, then remove old one if needed
-            // to ensure it is never empty during the process.
-            if (backStack.isEmpty()) {
-                backStack.add(targetRoute)
-            } else {
-                backStack.add(targetRoute)
-                while (backStack.size > 1) {
-                    backStack.removeAt(0)
-                }
-            }
+            // Gunakan pendekatan yang lebih aman untuk mengganti root rute
+            backStack.clear()
+            backStack.add(targetRoute)
         }
     }
 

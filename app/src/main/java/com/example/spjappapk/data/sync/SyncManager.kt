@@ -7,6 +7,7 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import java.util.concurrent.TimeUnit
+import com.example.spjappapk.data.sync.SyncWorker
 
 object SyncManager {
     private const val SYNC_WORK_NAME = "PeriodicSyncWork"

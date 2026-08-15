@@ -44,7 +44,7 @@ fun LoginScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "Versi ${BuildConfig.VERSION_NAME}",
+                    text = "v${BuildConfig.VERSION_NAME} (${BuildConfig.BUILD_TIME})",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f)
                 )

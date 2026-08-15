@@ -10,7 +10,7 @@ import java.util.Locale
 
 object FileUtil {
     fun createImageFile(context: Context): File {
-        val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+        val timeStamp = DateTimeUtil.formatFileName()
         val storageDir = context.getExternalFilesDir(null)
         return File.createTempFile("JPEG_${timeStamp}_", ".jpg", storageDir)
     }

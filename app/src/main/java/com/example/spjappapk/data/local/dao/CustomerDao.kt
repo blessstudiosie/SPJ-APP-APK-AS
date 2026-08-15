@@ -14,4 +14,16 @@ interface CustomerDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(customers: List<Customer>)
+
+    @Query("SELECT * FROM customers WHERE sync_status = 'PENDING'")
+    suspend fun getUnsyncedCustomers(): List<Customer>
+
+    @Query("UPDATE customers SET sync_status = :status WHERE remote_id = :remoteId")
+    suspend fun updateSyncStatus(remoteId: String, status: String)
+
+    @Query("DELETE FROM customers")
+    suspend fun clearAll()
+
+    @Query("SELECT MAX(updated_at) FROM customers")
+    suspend fun getMaxUpdatedAt(): String?
 }

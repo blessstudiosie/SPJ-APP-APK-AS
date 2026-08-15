@@ -15,6 +15,9 @@ sealed interface Route : NavKey {
     data object Inventory : Route
 
     @Serializable
+    data object Customers : Route
+
+    @Serializable
     data object Sales : Route
 
     @Serializable
@@ -27,5 +30,20 @@ sealed interface Route : NavKey {
     data object PendingSync : Route
 
     @Serializable
+    data object SyncLog : Route
+
+    @Serializable
     data object Notifications : Route
+
+    @Serializable
+    data object Settings : Route
+
+    @Serializable
+    data object AddSalesOrder : Route
+    
+    @Serializable
+    data object TeamTurnoverDetail : Route
+    
+    @Serializable
+    data object ErrorReports : Route
 }

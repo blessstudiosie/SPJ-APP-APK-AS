@@ -6,7 +6,9 @@ import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.realtime.Realtime
 import io.github.jan.supabase.storage.Storage
 import io.ktor.client.engine.okhttp.OkHttp
+import io.ktor.client.plugins.HttpTimeout
 import kotlinx.serialization.json.Json
+import java.util.concurrent.TimeUnit
 
 object SupabaseClient {
     private const val SUPABASE_URL = "https://ntvyrjrqxpmecqogolni.supabase.co"
@@ -14,12 +16,18 @@ object SupabaseClient {
 
     val client by lazy {
         try {
-            println("Initializing SupabaseClient with URL: $SUPABASE_URL")
+            android.util.Log.d("SupabaseClient", "Initializing SupabaseClient...")
             val client = createSupabaseClient(
                 supabaseUrl = SUPABASE_URL,
                 supabaseKey = SUPABASE_ANON_KEY
             ) {
-                httpEngine = OkHttp.create()
+                httpEngine = OkHttp.create {
+                    config {
+                        connectTimeout(30, TimeUnit.SECONDS)
+                        readTimeout(30, TimeUnit.SECONDS)
+                        writeTimeout(30, TimeUnit.SECONDS)
+                    }
+                }
                 install(Auth)
                 install(Postgrest) {
                     serializer = io.github.jan.supabase.serializer.KotlinXSerializer(Json {
@@ -31,11 +39,10 @@ object SupabaseClient {
                 install(Storage)
                 install(Realtime)
             }
-            println("SupabaseClient initialized successfully")
+            android.util.Log.d("SupabaseClient", "SupabaseClient initialized")
             client
         } catch (e: Exception) {
-            println("Failed to initialize SupabaseClient: ${e.message}")
-            e.printStackTrace()
+            android.util.Log.e("SupabaseClient", "Failed to initialize: ${e.message}", e)
             throw e
         }
     }
