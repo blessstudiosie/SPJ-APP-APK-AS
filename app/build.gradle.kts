@@ -23,7 +23,7 @@ android {
         versionName = "1.3"
 
         val sdf = SimpleDateFormat("dd/MM/yy HH:mm", Locale.getDefault())
-        sdf.timeZone = TimeZone.getTimeZone("Asia/Makassar")
+        sdf.timeZone = TimeZone.getTimeZone("UTC")
         val timestamp = sdf.format(Date())
         buildConfigField("String", "BUILD_TIME", "\"$timestamp\"")
 
@@ -101,6 +101,7 @@ dependencies {
     implementation(libs.moshi.kotlin)
     implementation(libs.okhttp)
     implementation(libs.play.services.location)
+    implementation("com.google.mlkit:barcode-scanning:17.3.0")
     implementation(libs.retrofit)
     testImplementation(libs.androidx.core)
     testImplementation(libs.androidx.junit)

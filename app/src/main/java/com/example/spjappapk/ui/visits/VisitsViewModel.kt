@@ -14,12 +14,17 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.UUID
 
+import kotlinx.coroutines.flow.map
+
+import com.example.spjappapk.data.local.entities.deduplicateVisits
+
 class VisitsViewModel(
     private val repository: VisitRepository,
     private val customerRepository: CustomerRepository,
     private val currentUser: com.example.spjappapk.ui.auth.SalesPerson?
 ) : ViewModel() {
     val visits: StateFlow<List<Visit>> = repository.allVisits
+        .map { list -> list.deduplicateVisits() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val customers: StateFlow<List<Customer>> = customerRepository.allCustomers
@@ -49,6 +54,16 @@ class VisitsViewModel(
                 syncStatus = "PENDING"
             )
             repository.insertVisit(visit)
+        }
+    }
+
+    suspend fun getTodayVisitForCustomer(customerId: String): Visit? {
+        return repository.getTodayVisitForCustomer(customerId)
+    }
+
+    fun updateCustomerCoordinates(customerId: String, lat: Double, lng: Double) {
+        viewModelScope.launch {
+            customerRepository.updateCustomerCoordinates(customerId, lat, lng)
         }
     }
 

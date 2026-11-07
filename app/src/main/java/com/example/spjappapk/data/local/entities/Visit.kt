@@ -30,3 +30,26 @@ data class Visit(
     @SerialName("sync_status") @ColumnInfo(name = "sync_status") val syncStatus: String = "PENDING",
     @SerialName("created_at") @ColumnInfo(name = "created_at") val createdAt: String? = null
 ) : Parcelable
+
+fun List<Visit>.deduplicateVisits(): List<Visit> {
+    val deduplicated = mutableListOf<Visit>()
+    val seenRemoteIds = mutableSetOf<String>()
+
+    val sortedList = this.sortedWith(
+        compareByDescending<Visit> { it.syncStatus == "PENDING" }
+            .thenByDescending { !it.photoPath.isNullOrBlank() }
+            .thenByDescending { it.timestamp }
+    )
+
+    for (visit in sortedList) {
+        if (!visit.remoteId.isNullOrBlank()) {
+            if (seenRemoteIds.add(visit.remoteId)) {
+                deduplicated.add(visit)
+            }
+        } else {
+            deduplicated.add(visit)
+        }
+    }
+
+    return deduplicated.sortedByDescending { it.timestamp }
+}

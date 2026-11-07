@@ -6,6 +6,7 @@ import com.example.spjappapk.data.remote.SupabaseClient
 import com.example.spjappapk.data.repository.CustomerRepository
 import com.example.spjappapk.data.repository.InventoryRepository
 import com.example.spjappapk.data.repository.NotificationRepository
+import com.example.spjappapk.data.repository.SalaryRepository
 import com.example.spjappapk.data.repository.SalesRepository
 import com.example.spjappapk.data.repository.VisitRepository
 import com.example.spjappapk.data.session.SessionManager
@@ -42,6 +43,21 @@ class SPJApplication : Application() {
             defaultHandler?.uncaughtException(thread, throwable)
         }
 
+        // Fix potential timezone typo in some Android distributions ("Asia/Makasar" -> "Asia/Makassar")
+        // We force UTC as the system default to avoid any recognition errors with Postgres
+        try {
+            System.setProperty("user.timezone", "UTC")
+            java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("UTC"))
+            android.util.Log.d("SPJ_APP", "System timezone forced to UTC")
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        
+        // Ensure Locale is also consistent
+        try {
+            java.util.Locale.setDefault(java.util.Locale.ROOT)
+        } catch (e: Exception) {}
+
         // Memulai sinkronisasi berkala setiap jam
         SyncManager.schedulePeriodicSync(this)
     }
@@ -64,5 +80,17 @@ class SPJApplication : Application() {
 
     val notificationRepository: NotificationRepository by lazy {
         NotificationRepository(database.notificationDao())
+    }
+
+    val paymentRepository: com.example.spjappapk.data.repository.PaymentRepository by lazy {
+        com.example.spjappapk.data.repository.PaymentRepository(database.paymentDao(), database.salesMasterDao())
+    }
+
+    val backupRepository: com.example.spjappapk.data.repository.BackupRepository by lazy {
+        com.example.spjappapk.data.repository.BackupRepository(database, this)
+    }
+
+    val salaryRepository: SalaryRepository by lazy {
+        SalaryRepository()
     }
 }

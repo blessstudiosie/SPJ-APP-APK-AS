@@ -70,5 +70,9 @@ data class SalesMaster(
 
     @SerialName("is_deleted")
     @ColumnInfo(name = "is_deleted")
-    val isDeleted: Boolean? = false
+    val isDeleted: Boolean? = false,
+
+    @SerialName("is_synced")
+    @ColumnInfo(name = "is_synced")
+    val isSynced: Boolean = true
 ) : Parcelable

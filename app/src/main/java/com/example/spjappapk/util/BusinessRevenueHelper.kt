@@ -1,5 +1,6 @@
 package com.example.spjappapk.util
 
+import com.example.spjappapk.data.local.entities.Customer
 import com.example.spjappapk.data.local.entities.SalesMaster
 import com.example.spjappapk.ui.auth.SalesPerson
 import java.util.Calendar
@@ -37,6 +38,26 @@ object BusinessRevenueHelper {
         return "Lainnya"
     }
 
+    fun resolveCustomerName(
+        customerName: String?,
+        customerId: String?,
+        customerList: List<Customer>
+    ): String {
+        if (!customerName.isNullOrBlank() && !customerName.contains("local-") && !customerName.startsWith("cust_")) {
+            return customerName
+        }
+        if (!customerId.isNullOrBlank()) {
+            val found = customerList.find { 
+                it.remoteId.equals(customerId, ignoreCase = true) || 
+                it.name.equals(customerId, ignoreCase = true) 
+            }
+            if (found != null && found.name.isNotBlank()) {
+                return found.name
+            }
+        }
+        return customerName?.ifBlank { null } ?: "Pelanggan"
+    }
+
     /**
      * Menghitung ringkasan dashboard berdasarkan SOP SPJ.
      * @param targetMonth 1-12
@@ -72,7 +93,7 @@ object BusinessRevenueHelper {
             // Di proyek ini, deliveryDate dan orderDate sudah berupa Long (timestamp)
             val effTimestamp = sale.deliveryDate ?: sale.orderDate
 
-            val cal = Calendar.getInstance(java.util.TimeZone.getTimeZone("Asia/Makassar")).apply { 
+            val cal = Calendar.getInstance(java.util.TimeZone.getTimeZone("GMT+8")).apply { 
                 timeInMillis = effTimestamp 
             }
             val m = cal.get(Calendar.MONTH) + 1 // 1-12

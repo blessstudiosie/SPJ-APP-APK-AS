@@ -15,6 +15,9 @@ interface SalesOrderDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrder(order: SalesOrder): Long
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAllOrders(orders: List<SalesOrder>)
+
     @Query("SELECT * FROM sales_orders WHERE status = 'PENDING'")
     suspend fun getUnsyncedOrders(): List<SalesOrder>
 

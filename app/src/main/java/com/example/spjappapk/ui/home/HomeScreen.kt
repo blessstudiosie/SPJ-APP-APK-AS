@@ -2,6 +2,7 @@ package com.example.spjappapk.ui.home
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Inventory
@@ -9,10 +10,25 @@ import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.ReportProblem
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Settings
+import com.example.spjappapk.ui.attendance.AttendanceScannerScreen
+import com.example.spjappapk.ui.dashboard.PerformanceReportScreen
+import com.example.spjappapk.ui.dashboard.PerformanceReportViewModel
+import com.example.spjappapk.ui.salary.SalaryConfirmationScreen
+import com.example.spjappapk.ui.salary.SalaryConfirmationViewModel
+import com.example.spjappapk.ui.salary.SalaryEstimationScreen
+import com.example.spjappapk.ui.salary.SalaryViewModel
+import com.example.spjappapk.ui.sales.AllPaymentsScreen
+import com.example.spjappapk.ui.sales.PendingOmzetScreen
+import com.example.spjappapk.ui.sales.PendingOmzetViewModel
+import com.example.spjappapk.ui.visits.TodayVisitsScreen
+import com.example.spjappapk.ui.visits.TodayVisitsViewModel
+import androidx.compose.material.icons.filled.QrCodeScanner
+import com.example.spjappapk.ui.sales.AllPaymentsViewModel
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -33,6 +49,7 @@ import com.example.spjappapk.ui.error.ErrorReportViewModel
 import com.example.spjappapk.ui.inventory.InventoryScreen
 import com.example.spjappapk.ui.inventory.InventoryViewModel
 import com.example.spjappapk.ui.navigation.Route
+import com.example.spjappapk.ui.sales.PaymentViewModel
 import com.example.spjappapk.ui.sales.SalesLedgerScreen
 import com.example.spjappapk.ui.sales.SalesViewModel
 import com.example.spjappapk.ui.notifications.NotificationScreen
@@ -62,18 +79,41 @@ fun HomeScreen(
         drawerState = drawerState,
         drawerContent = {
             ModalDrawerSheet {
+                Spacer(modifier = Modifier.height(24.dp))
+                Column(
+                    modifier = Modifier.padding(horizontal = 24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    androidx.compose.foundation.Image(
+                        painter = androidx.compose.ui.res.painterResource(id = com.example.spjappapk.R.drawable.logo_spj),
+                        contentDescription = "Logo SPJ",
+                        modifier = Modifier
+                            .size(100.dp)
+                            .padding(bottom = 12.dp)
+                    )
+                    Text(
+                        text = "SARANA PRIMA JAYA",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "Sales Mobile App",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                
                 Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    text = "SPJ Sales App",
-                    modifier = Modifier.padding(16.dp),
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Text(
-                    text = currentUser?.name ?: "User",
-                    modifier = Modifier.padding(start = 16.dp, bottom = 16.dp),
-                    style = MaterialTheme.typography.bodyMedium
-                )
+                HorizontalDivider()
+                
+                Box(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Logged in as: ${currentUser?.name ?: "User"}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 HorizontalDivider()
                 
                 val currentRoute = backStack.last()
@@ -90,6 +130,45 @@ fun HomeScreen(
                         }
                     },
                     icon = { Icon(Icons.Default.Dashboard, null) },
+                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                )
+                NavigationDrawerItem(
+                    label = { Text("Penjualan (Sales)") },
+                    selected = currentRoute == Route.Sales,
+                    onClick = { 
+                        scope.launch { drawerState.close() }
+                        if (currentRoute != Route.Sales) {
+                            backStack.clear()
+                            backStack.add(Route.Sales)
+                        }
+                    },
+                    icon = { Icon(Icons.Default.History, null) },
+                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                )
+                NavigationDrawerItem(
+                    label = { Text("Pembayaran (Payments)") },
+                    selected = currentRoute == Route.AllPayments,
+                    onClick = { 
+                        scope.launch { drawerState.close() }
+                        if (currentRoute != Route.AllPayments) {
+                            backStack.clear()
+                            backStack.add(Route.AllPayments)
+                        }
+                    },
+                    icon = { Icon(Icons.Default.Payments, null) },
+                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                )
+                NavigationDrawerItem(
+                    label = { Text("Kunjungan Lapangan") },
+                    selected = currentRoute == Route.Visits,
+                    onClick = { 
+                        scope.launch { drawerState.close() }
+                        if (currentRoute != Route.Visits) {
+                            backStack.clear()
+                            backStack.add(Route.Visits)
+                        }
+                    },
+                    icon = { Icon(Icons.Default.LocationOn, null) },
                     modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
                 )
                 NavigationDrawerItem(
@@ -119,29 +198,16 @@ fun HomeScreen(
                     modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
                 )
                 NavigationDrawerItem(
-                    label = { Text("Penjualan (Sales)") },
-                    selected = currentRoute == Route.Sales,
+                    label = { Text("Laporan Kinerja") },
+                    selected = currentRoute == Route.PerformanceReport,
                     onClick = { 
                         scope.launch { drawerState.close() }
-                        if (currentRoute != Route.Sales) {
+                        if (currentRoute != Route.PerformanceReport) {
                             backStack.clear()
-                            backStack.add(Route.Sales)
+                            backStack.add(Route.PerformanceReport)
                         }
                     },
-                    icon = { Icon(Icons.Default.History, null) },
-                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
-                )
-                NavigationDrawerItem(
-                    label = { Text("Kunjungan Lapangan") },
-                    selected = currentRoute == Route.Visits,
-                    onClick = { 
-                        scope.launch { drawerState.close() }
-                        if (currentRoute != Route.Visits) {
-                            backStack.clear()
-                            backStack.add(Route.Visits)
-                        }
-                    },
-                    icon = { Icon(Icons.Default.LocationOn, null) },
+                    icon = { Icon(Icons.Default.Assessment, null) },
                     modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
                 )
                 NavigationDrawerItem(
@@ -248,6 +314,13 @@ fun HomeScreen(
                 val unreadCount by app.database.notificationDao().getUnreadCount().collectAsState(initial = 0)
                         Text(when(currentRoute) {
                             is Route.Dashboard -> "Dashboard"
+                            is Route.TodayVisitsDetail -> "Rincian Kunjungan"
+                            is Route.PendingOmzetQueue -> "Antrean Omset"
+                            is Route.SalaryEstimation -> "Estimasi Gaji & Komisi"
+                            is Route.SalaryConfirmation -> "Tanda Terima Gaji"
+                            is Route.PerformanceReport -> "Laporan Kinerja"
+                            is Route.BillingInvoicesDetail -> "Detail Nota Tagihan"
+                            is Route.AllPayments -> "Daftar Pembayaran"
                             is Route.Inventory -> "Inventory"
                             is Route.Customers -> "Daftar Konsumen"
                             is Route.Sales -> "Sales"
@@ -301,24 +374,27 @@ fun HomeScreen(
                                 backStack.add(Route.Notifications)
                             },
                             onNavigateToTeamDetail = {
-                                backStack.add(Route.TeamTurnoverDetail)
+                                backStack.add(Route.PerformanceReport)
+                            },
+                            onNavigateToBillingDetail = {
+                                backStack.add(Route.BillingInvoicesDetail)
+                            },
+                            onNavigateToPendingOmzet = {
+                                backStack.add(Route.PendingOmzetQueue)
+                            },
+                            onNavigateToTodayVisits = {
+                                backStack.add(Route.TodayVisitsDetail)
                             }
                         )
                     }
                     is Route.TeamTurnoverDetail -> NavEntry(r) {
-                        val viewModel: DashboardViewModel = viewModel {
-                            DashboardViewModel(
-                                app.salesRepository, 
-                                app.visitRepository,
-                                app.inventoryRepository,
-                                app.customerRepository,
-                                currentUser,
-                                app
-                            )
+                        val viewModel: PerformanceReportViewModel = viewModel {
+                            PerformanceReportViewModel(app, currentUser)
                         }
-                        com.example.spjappapk.ui.dashboard.TeamTurnoverScreen(
+                        PerformanceReportScreen(
                             viewModel = viewModel,
-                            onNavigateBack = { backStack.removeAt(backStack.size - 1) }
+                            onNavigateBack = { backStack.removeAt(backStack.size - 1) },
+                            onNavigateToPendingOmzet = { backStack.add(Route.PendingOmzetQueue) }
                         )
                     }
                     is Route.Inventory -> NavEntry(r) {
@@ -329,7 +405,7 @@ fun HomeScreen(
                     }
                     is Route.Customers -> NavEntry(r) {
                         val viewModel: com.example.spjappapk.ui.customers.CustomerViewModel = viewModel {
-                            com.example.spjappapk.ui.customers.CustomerViewModel(app.customerRepository)
+                            com.example.spjappapk.ui.customers.CustomerViewModel(app.customerRepository, currentUser)
                         }
                         com.example.spjappapk.ui.customers.CustomerScreen(viewModel)
                     }
@@ -348,6 +424,9 @@ fun HomeScreen(
                             currentSalesPersonName = currentUser?.name ?: "Unknown",
                             onNavigateToAddOrder = {
                                 backStack.add(Route.AddSalesOrder)
+                            },
+                            onNavigateToPayments = { saleId ->
+                                backStack.add(Route.Payments(saleId))
                             }
                         )
                     }
@@ -407,6 +486,134 @@ fun HomeScreen(
                             ErrorReportViewModel(app)
                         }
                         ErrorReportsScreen(viewModel)
+                    }
+                    is Route.PerformanceReport -> NavEntry(r) {
+                        val viewModel: PerformanceReportViewModel = viewModel {
+                            PerformanceReportViewModel(app, currentUser)
+                        }
+                        PerformanceReportScreen(
+                            viewModel = viewModel,
+                            onNavigateBack = {
+                                if (backStack.size > 1) {
+                                    backStack.removeAt(backStack.size - 1)
+                                } else {
+                                    backStack.clear()
+                                    backStack.add(Route.Dashboard)
+                                }
+                            },
+                            onNavigateToPendingOmzet = { backStack.add(Route.PendingOmzetQueue) }
+                        )
+                    }
+                    is Route.BillingInvoicesDetail -> NavEntry(r) {
+                        val viewModel: DashboardViewModel = viewModel {
+                            DashboardViewModel(
+                                app.salesRepository,
+                                app.visitRepository,
+                                app.inventoryRepository,
+                                app.customerRepository,
+                                currentUser,
+                                app
+                            )
+                        }
+                        com.example.spjappapk.ui.dashboard.BillingInvoicesScreen(
+                            viewModel = viewModel,
+                            currentUser = currentUser,
+                            onNavigateBack = {
+                                if (backStack.size > 1) {
+                                    backStack.removeAt(backStack.size - 1)
+                                } else {
+                                    backStack.clear()
+                                    backStack.add(Route.Dashboard)
+                                }
+                            },
+                            onNavigateToPayment = { saleId ->
+                                backStack.add(Route.Payments(saleId))
+                            }
+                        )
+                    }
+                    is Route.Payments -> NavEntry(r) {
+                        val viewModel: PaymentViewModel = viewModel(key = r.saleId) {
+                            PaymentViewModel(app, r.saleId)
+                        }
+                        com.example.spjappapk.ui.sales.PaymentListScreen(
+                            viewModel = viewModel,
+                            onNavigateBack = { backStack.removeAt(backStack.size - 1) }
+                        )
+                    }
+                    is Route.AllPayments -> NavEntry(r) {
+                        val viewModel: AllPaymentsViewModel = viewModel {
+                            AllPaymentsViewModel(app, currentUser)
+                        }
+                        AllPaymentsScreen(
+                            viewModel = viewModel,
+                            onNavigateToPaymentDetail = { saleId ->
+                                backStack.add(Route.Payments(saleId))
+                            }
+                        )
+                    }
+                    is Route.SalaryEstimation -> NavEntry(r) {
+                        val viewModel: SalaryViewModel = viewModel {
+                            SalaryViewModel(app, currentUser)
+                        }
+                        SalaryEstimationScreen(
+                            viewModel = viewModel,
+                            onNavigateBack = {
+                                if (backStack.size > 1) {
+                                    backStack.removeAt(backStack.size - 1)
+                                } else {
+                                    backStack.clear()
+                                    backStack.add(Route.Dashboard)
+                                }
+                            }
+                        )
+                    }
+                    is Route.SalaryConfirmation -> NavEntry(r) {
+                        val viewModel: SalaryConfirmationViewModel = viewModel {
+                            SalaryConfirmationViewModel(app, currentUser)
+                        }
+                        SalaryConfirmationScreen(
+                            viewModel = viewModel,
+                            onNavigateBack = {
+                                if (backStack.size > 1) {
+                                    backStack.removeAt(backStack.size - 1)
+                                } else {
+                                    backStack.clear()
+                                    backStack.add(Route.Dashboard)
+                                }
+                            }
+                        )
+                    }
+                    is Route.PendingOmzetQueue -> NavEntry(r) {
+                        val viewModel: PendingOmzetViewModel = viewModel {
+                            PendingOmzetViewModel(app, currentUser)
+                        }
+                        PendingOmzetScreen(
+                            viewModel = viewModel,
+                            onNavigateBack = {
+                                if (backStack.size > 1) {
+                                    backStack.removeAt(backStack.size - 1)
+                                } else {
+                                    backStack.clear()
+                                    backStack.add(Route.Dashboard)
+                                }
+                            }
+                        )
+                    }
+                    is Route.TodayVisitsDetail -> NavEntry(r) {
+                        val viewModel: TodayVisitsViewModel = viewModel {
+                            TodayVisitsViewModel(app, currentUser)
+                        }
+                        TodayVisitsScreen(
+                            viewModel = viewModel,
+                            onNavigateBack = {
+                                if (backStack.size > 1) {
+                                    backStack.removeAt(backStack.size - 1)
+                                } else {
+                                    backStack.clear()
+                                    backStack.add(Route.Dashboard)
+                                }
+                            }
+                        )
                     }
                     else -> NavEntry(r) {
                         Text("Unknown Route")

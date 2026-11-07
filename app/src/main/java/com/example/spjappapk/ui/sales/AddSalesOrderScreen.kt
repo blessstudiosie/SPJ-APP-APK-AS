@@ -67,7 +67,7 @@ fun AddSalesOrderScreen(
                     ) {
                         Text("Total Estimasi:", style = MaterialTheme.typography.titleMedium)
                         Text(
-                            "Rp ${String.format(Locale.getDefault(), "%,.0f", totalAmount)}",
+                            com.example.spjappapk.util.CurrencyUtil.formatRupiah(totalAmount),
                             style = MaterialTheme.typography.titleLarge,
                             color = MaterialTheme.colorScheme.primary,
                             fontWeight = FontWeight.Bold
@@ -205,7 +205,7 @@ fun AddSalesOrderScreen(
                     ListItem(
                         headlineContent = { Text(item.displayProductName) },
                         supportingContent = {
-                            Text("${item.quantity} x Rp ${String.format(Locale.getDefault(), "%,.0f", item.displayPrice)}")
+                            Text("${item.quantity} x ${com.example.spjappapk.util.CurrencyUtil.formatRupiah(item.displayPrice)}")
                         },
                         trailingContent = {
                             IconButton(onClick = { orderItems.removeAt(index) }) {

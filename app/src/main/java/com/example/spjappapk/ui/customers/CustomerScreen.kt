@@ -22,6 +22,7 @@ fun CustomerScreen(
     val customers by viewModel.customers.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
+    var showAddDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -33,6 +34,11 @@ fun CustomerScreen(
                     }
                 }
             )
+        },
+        floatingActionButton = {
+            FloatingActionButton(onClick = { showAddDialog = true }) {
+                Icon(Icons.Default.Add, contentDescription = "Tambah Konsumen")
+            }
         }
     ) { padding ->
         Column(modifier = Modifier.padding(padding)) {
@@ -71,6 +77,25 @@ fun CustomerScreen(
                 }
             }
         }
+
+        if (showAddDialog) {
+            AddCustomerDialog(
+                onDismiss = { showAddDialog = false },
+                onConfirm = { name, address, ownerName, phone, deliveryRoute, creditLimit, latitude, longitude ->
+                    viewModel.addCustomer(
+                        name = name,
+                        address = address,
+                        ownerName = ownerName,
+                        phone = phone,
+                        deliveryRoute = deliveryRoute,
+                        creditLimit = creditLimit,
+                        latitude = latitude,
+                        longitude = longitude
+                    )
+                    showAddDialog = false
+                }
+            )
+        }
     }
 }
 
@@ -104,7 +129,7 @@ fun CustomerItem(customer: com.example.spjappapk.data.local.entities.Customer) {
             Column(horizontalAlignment = Alignment.End) {
                 if (customer.creditLimit > 0) {
                     Text(
-                        "Limit: Rp${String.format(Locale.getDefault(), "%,.0f", customer.creditLimit)}",
+                        "Limit: ${com.example.spjappapk.util.CurrencyUtil.formatRupiah(customer.creditLimit)}",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary
                     )

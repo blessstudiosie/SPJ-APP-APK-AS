@@ -3,6 +3,7 @@ package com.example.spjappapk.ui.dashboard
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.spjappapk.data.local.entities.SalesOrderItem
+import com.example.spjappapk.data.local.entities.deduplicateVisits
 import com.example.spjappapk.data.repository.CustomerRepository
 import com.example.spjappapk.data.repository.InventoryRepository
 import com.example.spjappapk.data.repository.SalesRepository
@@ -11,6 +12,7 @@ import com.example.spjappapk.ui.auth.SalesPerson
 import com.example.spjappapk.data.remote.SupabaseClient
 import io.github.jan.supabase.postgrest.postgrest
 import com.example.spjappapk.data.remote.models.AppUpdate
+import com.example.spjappapk.util.DateTimeUtil
 import io.github.jan.supabase.postgrest.query.Order
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -33,12 +35,12 @@ data class DashboardUiState(
 )
 
 class DashboardViewModel(
-    private val salesRepository: SalesRepository,
-    private val visitRepository: VisitRepository,
-    private val inventoryRepository: InventoryRepository,
-    private val customerRepository: CustomerRepository,
-    private val currentUser: SalesPerson?,
-    private val app: com.example.spjappapk.SPJApplication
+    val salesRepository: SalesRepository,
+    val visitRepository: VisitRepository,
+    val inventoryRepository: InventoryRepository,
+    val customerRepository: CustomerRepository,
+    val currentUser: SalesPerson?,
+    val app: com.example.spjappapk.SPJApplication
 ) : ViewModel() {
 
     private val json = Json { ignoreUnknownKeys = true; coerceInputValues = true }
@@ -66,7 +68,9 @@ class DashboardViewModel(
         try {
             if (currentUser == null) return@combine DashboardUiState(isLoading = false, isSyncing = isSyncing, syncStatus = syncStatus)
 
-            val calendar = Calendar.getInstance(TimeZone.getTimeZone("Asia/Makassar"))
+            android.util.Log.d("DashboardVM", "Current Default Timezone: ${java.util.TimeZone.getDefault().id}")
+            
+            val calendar = Calendar.getInstance(TimeZone.getTimeZone("GMT+08:00"))
             val todayStr = com.example.spjappapk.util.DateTimeUtil.getFormat("yyyy-MM-dd").format(calendar.time)
             
             // Start of Month
@@ -87,7 +91,8 @@ class DashboardViewModel(
             endOfMonthCal.set(Calendar.MILLISECOND, 999)
             val endOfMonth = endOfMonthCal.timeInMillis
 
-            val isManagerOrOwner = currentUser.role?.lowercase() in listOf("manager", "owner", "admin")
+            val roleClean = currentUser.role?.trim()?.lowercase() ?: ""
+            val isManagerOrOwner = roleClean in listOf("manager", "owner", "admin")
 
             // 1. Hitung Pesanan Hari Ini (Queue/Antrean)
             val todayOrders = if (isManagerOrOwner) salesQueue else salesQueue.filter { 
@@ -120,10 +125,14 @@ class DashboardViewModel(
             } else emptyList()
 
             // 4. Kunjungan Hari Ini
-            val vToday = (if (isManagerOrOwner) visits else visits.filter { 
+            val deduplicatedVisits = visits.deduplicateVisits()
+            val startOfDay = DateTimeUtil.getStartOfDay()
+            val endOfDay = DateTimeUtil.getEndOfDay()
+
+            val vToday = (if (isManagerOrOwner) deduplicatedVisits else deduplicatedVisits.filter { 
                 it.userId.equals(currentUser.id, ignoreCase = true) || 
                 it.salesPersonName.equals(currentUser.name, ignoreCase = true)
-            }).filter { try { com.example.spjappapk.util.DateTimeUtil.getFormat("yyyy-MM-dd").format(Date(it.timestamp)) == todayStr } catch(e:Exception){false} }
+            }).filter { it.timestamp in startOfDay..endOfDay }
 
             DashboardUiState(
                 totalOrdersToday = todayOrders.size,
@@ -180,9 +189,11 @@ class DashboardViewModel(
             try {
                 inventoryRepository.refreshInventory()
                 customerRepository.refreshCustomers()
-                // Refresh master sales explicitly
+                // Refresh master sales explicitly (Gunakan Full Sync untuk memastikan data tidak terpotong)
                 if (currentUser != null) {
-                    salesRepository.refreshSalesMaster(currentUser.id, currentUser.role?.lowercase() in listOf("manager", "owner", "admin"))
+                    val role = currentUser.role?.trim()?.lowercase() ?: ""
+                    val isManagerOrOwner = role in listOf("manager", "owner", "admin")
+                    salesRepository.refreshSalesMaster(currentUser.id, isManagerOrOwner, isFullSync = true)
                 }
                 sync()
                 checkForUpdates()

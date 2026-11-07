@@ -16,6 +16,11 @@ object SupabaseClient {
 
     val client by lazy {
         try {
+            // Force timezone fix here as well to be 100% sure
+            try {
+                java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("UTC"))
+            } catch (e: Exception) {}
+
             android.util.Log.d("SupabaseClient", "Initializing SupabaseClient...")
             val client = createSupabaseClient(
                 supabaseUrl = SUPABASE_URL,
@@ -23,9 +28,10 @@ object SupabaseClient {
             ) {
                 httpEngine = OkHttp.create {
                     config {
-                        connectTimeout(30, TimeUnit.SECONDS)
-                        readTimeout(30, TimeUnit.SECONDS)
-                        writeTimeout(30, TimeUnit.SECONDS)
+                        connectTimeout(60, TimeUnit.SECONDS)
+                        readTimeout(90, TimeUnit.SECONDS)
+                        writeTimeout(90, TimeUnit.SECONDS)
+                        callTimeout(120, TimeUnit.SECONDS)
                     }
                 }
                 install(Auth)

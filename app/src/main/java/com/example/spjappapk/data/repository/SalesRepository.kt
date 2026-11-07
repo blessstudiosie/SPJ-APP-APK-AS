@@ -18,6 +18,7 @@ import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import com.example.spjappapk.data.sync.SyncWorker
+import com.example.spjappapk.util.retryNetworkCall
 import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.json.Json
@@ -31,6 +32,7 @@ class SalesRepository(
 ) {
     val allSales: Flow<List<SalesOrder>> = salesOrderDao.getAllOrders()
     val allSalesMaster: Flow<List<SalesMaster>> = salesMasterDao.getAllSalesMaster()
+    val allSalesDetails: Flow<List<SalesDetailEntity>> = salesDetailDao.getAllDetailsFlow()
 
     suspend fun insertOrder(order: SalesOrder) {
         salesOrderDao.insertOrder(order)
@@ -40,15 +42,24 @@ class SalesRepository(
     suspend fun refreshSalesPersons(isFullSync: Boolean = false) {
         try {
             val lastUpdate = if (isFullSync) null else salesPersonDao.getMaxUpdatedAt()
-            val response = SupabaseClient.client.postgrest["sales_persons"].select {
-                if (isFullSync) {
-                    limit(5000)
-                } else if (lastUpdate != null) {
-                    filter { gt("updated_at", lastUpdate) }
+            val allData = mutableListOf<com.example.spjappapk.data.local.entities.SalesPersonEntity>()
+            var offset = 0
+            val pageSize = 1000
+
+            while (true) {
+                val response = SupabaseClient.client.postgrest["sales_persons"].select {
+                    if (lastUpdate != null) {
+                        filter { gt("updated_at", lastUpdate) }
+                    }
+                    range(offset.toLong(), (offset + pageSize - 1).toLong())
                 }
+                val batch = Json { ignoreUnknownKeys = true }.decodeFromString<List<com.example.spjappapk.data.local.entities.SalesPersonEntity>>(response.data)
+                allData.addAll(batch)
+                
+                if (batch.size < pageSize) break
+                offset += pageSize
             }
-            val persons = Json { ignoreUnknownKeys = true }.decodeFromString<List<com.example.spjappapk.data.local.entities.SalesPersonEntity>>(response.data)
-            salesPersonDao.insertAll(persons)
+            salesPersonDao.insertAll(allData)
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -56,7 +67,8 @@ class SalesRepository(
 
     suspend fun refreshSalesMaster(userId: String, isManager: Boolean, isFullSync: Boolean = false) {
         try {
-            val allowedStatuses = listOf("SO", "ON PROSES", "DALAM PENGIRIMAN", "TEMPO", "DONE")
+            // Kita hilangkan filter status di server agar tidak ada data yang terlewat (case-sensitive)
+            // Filter status akan dilakukan secara lokal di UI/Helper
             val lastUpdate = if (isFullSync) null else salesMasterDao.getMaxUpdatedAt()
             
             val allData = mutableListOf<SalesMaster>()
@@ -64,18 +76,19 @@ class SalesRepository(
             val pageSize = 1000
 
             while (true) {
-                val response = SupabaseClient.client.postgrest["sales"]
-                    .select {
-                        if (!isManager) {
-                            filter { eq("sales_person_id", userId) }
+                val batch = retryNetworkCall(times = 3) {
+                    val response = SupabaseClient.client.postgrest["sales"]
+                        .select {
+                            if (!isManager) {
+                                filter { eq("sales_person_id", userId) }
+                            }
+                            if (lastUpdate != null) {
+                                filter { gt("updated_at", lastUpdate) }
+                            }
+                            range(offset.toLong(), (offset + pageSize - 1).toLong())
                         }
-                        filter { isIn("status", allowedStatuses) }
-                        if (lastUpdate != null) {
-                            filter { gt("updated_at", lastUpdate) }
-                        }
-                        range(offset.toLong(), (offset + pageSize - 1).toLong())
-                    }
-                val batch = Json { ignoreUnknownKeys = true }.decodeFromString<List<SalesMaster>>(response.data)
+                    Json { ignoreUnknownKeys = true }.decodeFromString<List<SalesMaster>>(response.data)
+                }
                 allData.addAll(batch)
                 
                 if (batch.size < pageSize) break
@@ -100,6 +113,37 @@ class SalesRepository(
 
     suspend fun getTeamMonthlyBreakdown(start: Long, end: Long): List<com.example.spjappapk.data.local.dao.SalesPersonOmzet> {
         return salesMasterDao.getTeamMonthlyBreakdown(start, end)
+    }
+
+    suspend fun prefetchSalesDetails(saleIds: List<String>) {
+        if (saleIds.isEmpty()) return
+        try {
+            val cachedSaleIds = mutableSetOf<String>()
+            saleIds.chunked(200).forEach { chunk ->
+                val cached = salesDetailDao.getDetailsBySaleIds(chunk)
+                cached.forEach { cachedSaleIds.add(it.saleId) }
+            }
+
+            val missingSaleIds = saleIds.filter { it !in cachedSaleIds }
+            if (missingSaleIds.isEmpty()) return
+
+            missingSaleIds.chunked(50).forEach { chunk ->
+                val remoteDetails = retryNetworkCall(times = 2) {
+                    val response = SupabaseClient.client.postgrest["sales_details"]
+                        .select {
+                            filter {
+                                isIn("sale_id", chunk)
+                            }
+                        }
+                    Json { ignoreUnknownKeys = true }.decodeFromString<List<SalesDetail>>(response.data)
+                }
+                if (remoteDetails.isNotEmpty()) {
+                    salesDetailDao.insertAll(remoteDetails.map { it.toLocalEntity() })
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     suspend fun getSalesDetails(salesId: String): List<SalesDetail> {

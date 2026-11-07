@@ -4,6 +4,7 @@ import com.example.spjappapk.data.local.dao.CustomerDao
 import com.example.spjappapk.data.local.dao.SyncLogDao
 import com.example.spjappapk.data.local.entities.Customer
 import com.example.spjappapk.data.local.entities.SyncLog
+import com.example.spjappapk.util.retryNetworkCall
 import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -21,22 +22,32 @@ class CustomerRepository(
         try {
             syncLogDao.insert(SyncLog(event = "Customers", status = "INFO", message = if (isFullSync) "Full Refresh customers..." else "Incremental Sync customers..."))
             
-            val remoteData: List<Customer>
+            val allRemoteData = mutableListOf<Customer>()
+            var offset = 0
+            val pageSize = 1000
             val lastUpdate = if (isFullSync) null else customerDao.getMaxUpdatedAt()
 
-            withTimeout(15000L) {
-                remoteData = supabaseClient.postgrest["customers"].select {
-                    if (isFullSync) {
-                        limit(5000)
-                    } else if (lastUpdate != null) {
-                        filter { gt("updated_at", lastUpdate) }
+            withTimeout(120000L) {
+                while (true) {
+                    val batch = retryNetworkCall(times = 3) {
+                        val response = supabaseClient.postgrest["customers"].select {
+                            if (lastUpdate != null) {
+                                filter { gt("updated_at", lastUpdate) }
+                            }
+                            range(offset.toLong(), (offset + pageSize - 1).toLong())
+                        }
+                        response.decodeList<Customer>()
                     }
-                }.decodeList<Customer>()
+                    allRemoteData.addAll(batch)
+                    
+                    if (batch.size < pageSize) break
+                    offset += pageSize
+                }
             }
 
-            if (remoteData.isNotEmpty()) {
-                customerDao.insertAll(remoteData)
-                syncLogDao.insert(SyncLog(event = "Customers", status = "SUCCESS", message = "Berhasil menarik ${remoteData.size} pelanggan"))
+            if (allRemoteData.isNotEmpty()) {
+                customerDao.insertAll(allRemoteData)
+                syncLogDao.insert(SyncLog(event = "Customers", status = "SUCCESS", message = "Berhasil menarik ${allRemoteData.size} pelanggan"))
             } else {
                 syncLogDao.insert(SyncLog(event = "Customers", status = "SUCCESS", message = "Tidak ada data pelanggan baru"))
             }
@@ -59,28 +70,58 @@ class CustomerRepository(
             val insertData = mutableMapOf<String, Any?>(
                 "id" to customer.remoteId,
                 "name" to customer.name,
-                "address" to customer.address,
+                "address" to (customer.address ?: ""),
                 "owner_name" to (customer.ownerName ?: ""),
-                "phone" to customer.phone,
-                "latitude" to customer.latitude,
-                "longitude" to customer.longitude,
-                "sales_person_id" to customer.salesPersonId,
-                "sales_person" to customer.salesPersonName
+                "phone" to (customer.phone ?: ""),
+                "latitude" to (customer.latitude ?: 0.0),
+                "longitude" to (customer.longitude ?: 0.0),
+                "jalur_pengiriman" to (customer.deliveryRoute ?: "LOBAR-MATARAM"),
+                "limit_piutang" to customer.creditLimit
             )
+            if (!customer.salesPersonId.isNullOrBlank()) {
+                insertData["sales_person_id"] = customer.salesPersonId
+            }
+            if (!customer.salesPersonName.isNullOrBlank()) {
+                insertData["sales_person"] = customer.salesPersonName
+            }
 
-            // Coba push langsung
-            supabaseClient.postgrest["customers"].insert(insertData)
+            // Coba push langsung menggunakan upsert
+            supabaseClient.postgrest["customers"].upsert(insertData)
             
             // Jika berhasil push, update status jadi SUCCESS
             customerDao.updateSyncStatus(customer.remoteId, "SUCCESS")
             syncLogDao.insert(SyncLog(event = "Customers", status = "SUCCESS", message = "Pelanggan ${customer.name} berhasil didaftarkan"))
         } catch (e: Exception) {
             val errorMsg = e.localizedMessage ?: "Offline"
-            syncLogDao.insert(SyncLog(event = "Customers", status = "INFO", message = "Pelanggan disimpan lokal (Akan sinkron saat online)"))
+            if (errorMsg.contains("23505") || errorMsg.contains("already exists")) {
+                customerDao.updateSyncStatus(customer.remoteId, "SUCCESS")
+                syncLogDao.insert(SyncLog(event = "Customers", status = "SUCCESS", message = "Pelanggan ${customer.name} sudah terdaftar di server"))
+            } else {
+                syncLogDao.insert(SyncLog(event = "Customers", status = "INFO", message = "Pelanggan disimpan lokal (Akan sinkron saat online)"))
+            }
         }
     }
 
-
+    suspend fun updateCustomerCoordinates(remoteId: String, lat: Double, lng: Double): Unit = withContext(Dispatchers.IO) {
+        try {
+            // Update local Room database
+            customerDao.updateCustomerCoordinates(remoteId, lat, lng)
+            
+            // Try to push to Supabase
+            val updateData = mapOf(
+                "latitude" to lat,
+                "longitude" to lng,
+                "updated_at" to com.example.spjappapk.util.DateTimeUtil.getUtcIsoFormat().format(java.util.Date())
+            )
+            supabaseClient.postgrest["customers"].update(updateData) {
+                filter { eq("id", remoteId) }
+            }
+            customerDao.updateSyncStatus(remoteId, "SUCCESS")
+            syncLogDao.insert(SyncLog(event = "Customers", status = "SUCCESS", message = "Koordinat outlet berhasil di-lock ke ($lat, $lng)"))
+        } catch (e: Exception) {
+            syncLogDao.insert(SyncLog(event = "Customers", status = "INFO", message = "Koordinat outlet diperbarui secara lokal (Akan sinkron saat online)"))
+        }
+    }
 
     suspend fun checkAndFixOrphanCustomer(remoteId: String, name: String, salesId: String?, salesName: String?) = withContext(Dispatchers.IO) {
         try {

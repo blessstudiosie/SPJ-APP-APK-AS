@@ -4,11 +4,59 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 object DateTimeUtil {
-    private val WITA_ZONE = TimeZone.getTimeZone("Asia/Makassar")
+    // Menggunakan GMT+8 secara eksplisit untuk menghindari bug typo "Asia/Makasar" di sistem OS
+    private val WITA_ZONE = TimeZone.getTimeZone("GMT+08:00")
 
     fun getFormat(pattern: String): SimpleDateFormat {
-        return SimpleDateFormat(pattern, Locale.getDefault()).apply {
+        return SimpleDateFormat(pattern, Locale.ROOT).apply {
             timeZone = WITA_ZONE
+        }
+    }
+
+    /**
+     * Get start of day in WITA (00:00:00.000)
+     */
+    fun getStartOfDay(timestamp: Long = System.currentTimeMillis()): Long {
+        val cal = Calendar.getInstance(WITA_ZONE).apply {
+            timeInMillis = timestamp
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        return cal.timeInMillis
+    }
+
+    /**
+     * Get end of day in WITA (23:59:59.999)
+     */
+    fun getEndOfDay(timestamp: Long = System.currentTimeMillis()): Long {
+        val cal = Calendar.getInstance(WITA_ZONE).apply {
+            timeInMillis = timestamp
+            set(Calendar.HOUR_OF_DAY, 23)
+            set(Calendar.MINUTE, 59)
+            set(Calendar.SECOND, 59)
+            set(Calendar.MILLISECOND, 999)
+        }
+        return cal.timeInMillis
+    }
+
+    /**
+     * Get format for ISO 8601 in UTC (e.g. 2023-01-01T10:00:00Z)
+     * Using UTC is more robust for server synchronization
+     */
+    fun getUtcIsoFormat(): SimpleDateFormat {
+        return SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.ROOT).apply {
+            timeZone = TimeZone.getTimeZone("GMT")
+        }
+    }
+    
+    /**
+     * Format for database that is neutral to names
+     */
+    fun getDbFormat(): SimpleDateFormat {
+        return SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.ROOT).apply {
+            timeZone = TimeZone.getTimeZone("GMT")
         }
     }
 
@@ -16,7 +64,7 @@ object DateTimeUtil {
      * Get format for ISO 8601 with timezone offset (e.g. 2023-01-01T10:00:00+08:00)
      */
     fun getIsoFormat(): SimpleDateFormat {
-        return SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.getDefault()).apply {
+        return SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.ROOT).apply {
             timeZone = WITA_ZONE
         }
     }

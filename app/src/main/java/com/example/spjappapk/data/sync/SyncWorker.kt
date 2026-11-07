@@ -11,6 +11,7 @@ import com.example.spjappapk.data.remote.SupabaseClient
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.storage.storage
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
@@ -44,23 +45,34 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             }
             unsyncedCustomers.forEach { customer ->
                 try {
-                    val insertData = buildJsonObject {
-                        put("id", customer.remoteId)
-                        put("name", customer.name)
-                        put("address", customer.address ?: "")
-                        put("owner_name", customer.ownerName ?: "")
-                        put("phone", customer.phone ?: "")
-                        put("latitude", customer.latitude ?: 0.0)
-                        put("longitude", customer.longitude ?: 0.0)
-                        put("sales_person_id", customer.salesPersonId ?: "")
-                        put("sales_person", customer.salesPersonName ?: "")
-                        put("jalur_pengiriman", customer.deliveryRoute ?: "LOBAR-MATARAM")
-                        put("limit_piutang", customer.creditLimit)
+                    val insertData = mutableMapOf<String, Any?>(
+                        "id" to customer.remoteId,
+                        "name" to customer.name,
+                        "address" to (customer.address ?: ""),
+                        "owner_name" to (customer.ownerName ?: ""),
+                        "phone" to (customer.phone ?: ""),
+                        "latitude" to (customer.latitude ?: 0.0),
+                        "longitude" to (customer.longitude ?: 0.0),
+                        "jalur_pengiriman" to (customer.deliveryRoute ?: "LOBAR-MATARAM"),
+                        "limit_piutang" to customer.creditLimit
+                    )
+                    if (!customer.salesPersonId.isNullOrBlank()) {
+                        insertData["sales_person_id"] = customer.salesPersonId
                     }
-                    SupabaseClient.client.postgrest["customers"].insert(insertData)
+                    if (!customer.salesPersonName.isNullOrBlank()) {
+                        insertData["sales_person"] = customer.salesPersonName
+                    }
+
+                    SupabaseClient.client.postgrest["customers"].upsert(insertData)
                     customerDao.updateSyncStatus(customer.remoteId, "SUCCESS")
                 } catch (e: Exception) {
-                    logSync("Customers", "ERROR", "Failed to sync customer ${customer.name}: ${e.message}")
+                    val msg = e.message ?: ""
+                    if (msg.contains("23505") || msg.contains("already exists")) {
+                        customerDao.updateSyncStatus(customer.remoteId, "SUCCESS")
+                        logSync("Customers", "SUCCESS", "Customer ${customer.name} already exists on server")
+                    } else {
+                        logSync("Customers", "ERROR", "Failed to sync customer ${customer.name}: $msg")
+                    }
                 }
             }
 
@@ -81,6 +93,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                     )
                     app.visitRepository.refreshVisits(currentUser.id)
                     app.notificationRepository.refreshNotifications(currentUser.id)
+                    app.paymentRepository.refreshPayments()
                 }
                 
                 android.util.Log.d("SyncWorker", "Master data refresh called")
@@ -105,7 +118,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                         put("latitude", visit.locationLat)
                         put("longitude", visit.locationLng)
                         put("notes", visit.notes ?: "")
-                        put("check_in_date", com.example.spjappapk.util.DateTimeUtil.getIsoFormat().format(java.util.Date(visit.timestamp)))
+                        put("check_in_date", com.example.spjappapk.util.DateTimeUtil.getUtcIsoFormat().format(java.util.Date(visit.timestamp)))
                     }
 
                     val response = SupabaseClient.client.postgrest["check_in_logs"].insert(insertData) {
@@ -157,7 +170,52 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                 }
             }
 
-            // 4. PULL: Check for Admin Feedback for Sales Orders
+            // 4. PUSH: Sync Payments to Supabase
+            val unsyncedPayments = database.paymentDao().getUnsyncedPayments()
+            if (unsyncedPayments.isNotEmpty()) {
+                logSync("Payments", "INFO", "Syncing ${unsyncedPayments.size} unsynced payments")
+            }
+            unsyncedPayments.forEach { payment ->
+                try {
+                    val insertData = buildJsonObject {
+                        put("id", payment.id)
+                        put("sale_id", payment.saleId)
+                        put("payment_date", com.example.spjappapk.util.DateTimeUtil.getUtcIsoFormat().format(java.util.Date(payment.paymentDate)))
+                        put("amount", payment.amount)
+                        put("payment_method", payment.paymentMethod)
+                        put("status", payment.status)
+                        put("notes", payment.notes ?: "")
+                    }
+
+                    SupabaseClient.client.postgrest["payments"].upsert(insertData)
+                    database.paymentDao().markAsSynced(payment.id)
+                    logSync("Payments", "SUCCESS", "Payment for sale ${payment.saleId} synced")
+                } catch (e: Exception) {
+                    logSync("Payments", "ERROR", "Failed to sync payment: ${e.message}")
+                }
+            }
+
+            // 5. PUSH: Sync Updated Sales (Payments results) to Supabase
+            val unsyncedSales = salesMasterDao.getUnsyncedSales()
+            unsyncedSales.forEach { sale ->
+                try {
+                    val updateData = buildJsonObject {
+                        put("paid", sale.paid)
+                        put("remaining", sale.remaining)
+                        put("status", sale.status)
+                        put("updated_at", com.example.spjappapk.util.DateTimeUtil.getUtcIsoFormat().format(java.util.Date()))
+                    }
+                    SupabaseClient.client.postgrest["sales"].update(updateData) {
+                        filter { eq("id", sale.id) }
+                    }
+                    salesMasterDao.markAsSynced(sale.id)
+                    logSync("Sales", "SUCCESS", "Sale ${sale.nota} balance updated on server")
+                } catch (e: Exception) {
+                    logSync("Sales", "ERROR", "Failed to sync sale update: ${e.message}")
+                }
+            }
+
+            // 6. PULL: Check for Admin Feedback for Sales Orders
             val ordersToCheck = salesOrderDao.getOrdersAwaitingFeedback()
             if (ordersToCheck.isNotEmpty()) {
                 val remoteIds = ordersToCheck.mapNotNull { it.remoteId }

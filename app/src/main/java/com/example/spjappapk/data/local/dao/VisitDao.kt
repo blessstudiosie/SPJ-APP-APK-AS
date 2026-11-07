@@ -12,8 +12,14 @@ interface VisitDao {
     @Query("SELECT * FROM visits ORDER BY timestamp DESC")
     fun getAllVisits(): Flow<List<Visit>>
 
+    @Query("SELECT * FROM visits")
+    suspend fun getAllVisitsList(): List<Visit>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertVisit(visit: Visit): Long
+
+    @Query("SELECT * FROM visits WHERE customer_id = :customerId AND timestamp BETWEEN :startOfDay AND :endOfDay LIMIT 1")
+    suspend fun getTodayVisitForCustomer(customerId: String, startOfDay: Long, endOfDay: Long): Visit?
 
     @Query("SELECT * FROM visits WHERE sync_status = 'PENDING'")
     suspend fun getUnsyncedVisits(): List<Visit>

@@ -17,11 +17,15 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
+import android.net.Uri
+import com.example.spjappapk.data.repository.BackupRepository
+
 class SettingsViewModel(
     private val inventoryRepository: InventoryRepository,
     private val customerRepository: CustomerRepository,
     private val salesRepository: SalesRepository,
     private val visitRepository: VisitRepository,
+    private val backupRepository: BackupRepository,
     private val currentUser: SalesPerson?
 ) : ViewModel() {
 
@@ -132,6 +136,43 @@ class SettingsViewModel(
             } finally {
                 _isSyncing.value = false
             }
+        }
+    }
+
+    fun exportBackup(uri: Uri) {
+        viewModelScope.launch {
+            _isSyncing.value = true
+            _syncStatus.value = "Membuat file backup data..."
+            val result = backupRepository.createBackup(uri)
+            result.fold(
+                onSuccess = {
+                    _syncStatus.value = "Berhasil! File backup berhasil disimpan."
+                },
+                onFailure = { err ->
+                    _syncStatus.value = "Gagal membuat backup: ${err.localizedMessage}"
+                }
+            )
+            _isSyncing.value = false
+        }
+    }
+
+    fun importBackup(uri: Uri) {
+        viewModelScope.launch {
+            _isSyncing.value = true
+            _syncStatus.value = "Membaca & memulihkan data dari backup..."
+            val result = backupRepository.restoreBackup(uri)
+            result.fold(
+                onSuccess = { res ->
+                    _syncStatus.value = "Pemulihan Berhasil! (${res.visitsCount} Kunjungan, ${res.ordersCount} Pesanan, ${res.customersCount} Pelanggan, ${res.paymentsCount} Pembayaran)."
+                    // Triggers background sync to send restored unsynced items
+                    visitRepository.scheduleSync()
+                    salesRepository.scheduleSync()
+                },
+                onFailure = { err ->
+                    _syncStatus.value = "Gagal memulihkan backup: ${err.localizedMessage}"
+                }
+            )
+            _isSyncing.value = false
         }
     }
 }

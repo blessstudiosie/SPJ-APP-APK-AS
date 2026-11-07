@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import com.example.spjappapk.data.local.entities.SalesDetailEntity
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface SalesDetailDao {
@@ -13,6 +14,12 @@ interface SalesDetailDao {
 
     @Query("SELECT * FROM sales_details_cache WHERE sale_id = :saleId")
     suspend fun getDetailsBySaleId(saleId: String): List<SalesDetailEntity>
+
+    @Query("SELECT * FROM sales_details_cache WHERE sale_id IN (:saleIds)")
+    suspend fun getDetailsBySaleIds(saleIds: List<String>): List<SalesDetailEntity>
+
+    @Query("SELECT * FROM sales_details_cache")
+    fun getAllDetailsFlow(): Flow<List<SalesDetailEntity>>
 
     @Query("DELETE FROM sales_details_cache")
     suspend fun clearAll()

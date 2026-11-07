@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.spjappapk.data.local.entities.Customer
 import com.example.spjappapk.data.repository.CustomerRepository
+import com.example.spjappapk.ui.auth.SalesPerson
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -11,8 +12,12 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.util.UUID
 
-class CustomerViewModel(private val repository: CustomerRepository) : ViewModel() {
+class CustomerViewModel(
+    private val repository: CustomerRepository,
+    private val currentUser: SalesPerson? = null
+) : ViewModel() {
     private val _searchQuery = MutableStateFlow("")
     val searchQuery = _searchQuery.asStateFlow()
 
@@ -40,6 +45,35 @@ class CustomerViewModel(private val repository: CustomerRepository) : ViewModel(
 
     fun updateSearchQuery(query: String) {
         _searchQuery.value = query
+    }
+
+    fun addCustomer(
+        name: String,
+        address: String,
+        ownerName: String?,
+        phone: String?,
+        deliveryRoute: String?,
+        creditLimit: Double,
+        latitude: Double?,
+        longitude: Double?
+    ) {
+        viewModelScope.launch {
+            val newCustomer = Customer(
+                remoteId = UUID.randomUUID().toString(),
+                name = name,
+                address = address,
+                ownerName = ownerName,
+                phone = phone,
+                deliveryRoute = deliveryRoute ?: "LOBAR-MATARAM",
+                creditLimit = creditLimit,
+                latitude = latitude,
+                longitude = longitude,
+                salesPersonId = currentUser?.id,
+                salesPersonName = currentUser?.name,
+                syncStatus = "PENDING"
+            )
+            repository.addCustomer(newCustomer)
+        }
     }
 
     fun refresh() {

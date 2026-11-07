@@ -15,6 +15,9 @@ interface CustomerDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(customers: List<Customer>)
 
+    @Query("UPDATE customers SET latitude = :lat, longitude = :lng, sync_status = 'PENDING' WHERE remote_id = :remoteId")
+    suspend fun updateCustomerCoordinates(remoteId: String, lat: Double, lng: Double)
+
     @Query("SELECT * FROM customers WHERE sync_status = 'PENDING'")
     suspend fun getUnsyncedCustomers(): List<Customer>
 

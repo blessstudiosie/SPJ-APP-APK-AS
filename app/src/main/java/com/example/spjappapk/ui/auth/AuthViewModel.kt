@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.spjappapk.data.remote.SupabaseClient
 import com.example.spjappapk.data.session.SessionManager
+import com.example.spjappapk.util.DateTimeUtil
 import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -26,7 +27,10 @@ data class SalesPerson(
     val phone: String? = null,
     val email: String? = null,
     @SerialName("target_omset") val targetOmset: Double? = 0.0,
-    val role: String? = null
+    val role: String? = null,
+    @SerialName("is_active") val isActive: Boolean = true,
+    @SerialName("resign_date") val resignDate: String? = null,
+    @SerialName("resign_reason") val resignReason: String? = null
 )
 
 class AuthViewModel(private val sessionManager: SessionManager) : ViewModel() {
@@ -50,12 +54,56 @@ class AuthViewModel(private val sessionManager: SessionManager) : ViewModel() {
     }
 
     init {
-        // Load session automatically
+        // Load session automatically and validate if user account is still active
         viewModelScope.launch {
             sessionManager.userFlow.collectLatest { savedUser ->
-                _user.value = savedUser
-                _isInitialLoading.value = false
+                if (savedUser != null) {
+                    validateSession(savedUser)
+                } else {
+                    _user.value = null
+                    _isInitialLoading.value = false
+                }
             }
+        }
+    }
+
+    private suspend fun validateSession(savedUser: SalesPerson) {
+        try {
+            val response = SupabaseClient.client.postgrest["sales_persons"]
+                .select {
+                    filter { eq("id", savedUser.id) }
+                }
+            val data = json.parseToJsonElement(response.data).jsonArray
+            if (data.isNotEmpty()) {
+                val latestUser = json.decodeFromJsonElement<SalesPerson>(data[0].jsonObject)
+                if (!latestUser.isActive) {
+                    // Account deactivated by Admin! Auto-logout
+                    sessionManager.clearSession()
+                    _user.value = null
+                    val pesanResign = if (!latestUser.resignDate.isNullOrBlank()) {
+                        val formattedDate = try {
+                            DateTimeUtil.formatDateOnly(
+                                DateTimeUtil.parseIso(latestUser.resignDate)?.time ?: 0L
+                            )
+                        } catch (e: Exception) { latestUser.resignDate }
+                        " per tanggal $formattedDate"
+                    } else ""
+                    val reasonText = if (!latestUser.resignReason.isNullOrBlank()) " (${latestUser.resignReason})" else ""
+                    _error.value = "Sesi Anda telah berakhir karena akun ini telah dinonaktifkan oleh Administrator$pesanResign$reasonText."
+                    _isInitialLoading.value = false
+                    return
+                } else {
+                    _user.value = latestUser
+                    sessionManager.saveSession(latestUser)
+                }
+            } else {
+                _user.value = savedUser
+            }
+        } catch (e: Exception) {
+            // Offline fallback: use saved session
+            _user.value = savedUser
+        } finally {
+            _isInitialLoading.value = false
         }
     }
 
@@ -87,6 +135,21 @@ class AuthViewModel(private val sessionManager: SessionManager) : ViewModel() {
                 if (data.isNotEmpty()) {
                     val userObj = json.decodeFromJsonElement<SalesPerson>(data[0].jsonObject)
                     
+                    // Cek status keaktifan akun (Is Active Check)
+                    if (!userObj.isActive) {
+                        val pesanResign = if (!userObj.resignDate.isNullOrBlank()) {
+                            val formattedDate = try {
+                                DateTimeUtil.formatDateOnly(
+                                    DateTimeUtil.parseIso(userObj.resignDate)?.time ?: 0L
+                                )
+                            } catch (e: Exception) { userObj.resignDate }
+                            " per tanggal $formattedDate"
+                        } else ""
+                        val reasonText = if (!userObj.resignReason.isNullOrBlank()) " (${userObj.resignReason})" else ""
+                        _error.value = "Akun Anda telah dinonaktifkan / resign$pesanResign$reasonText. Silakan hubungi Admin kantor CV. Sarana Prima Jaya."
+                        return@launch
+                    }
+
                     // Simpan ke session manager agar "Stay Logged In"
                     sessionManager.saveSession(userObj)
                     

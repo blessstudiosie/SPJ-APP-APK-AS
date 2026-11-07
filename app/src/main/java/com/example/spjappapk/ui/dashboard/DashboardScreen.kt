@@ -10,6 +10,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -31,7 +32,10 @@ fun DashboardScreen(
     onNavigateToSyncLog: () -> Unit = {},
     onNavigateToVisits: () -> Unit = {},
     onNavigateToNotifications: () -> Unit = {},
-    onNavigateToTeamDetail: () -> Unit = {}
+    onNavigateToTeamDetail: () -> Unit = {},
+    onNavigateToBillingDetail: () -> Unit = {},
+    onNavigateToPendingOmzet: () -> Unit = {},
+    onNavigateToTodayVisits: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
@@ -103,11 +107,31 @@ fun DashboardScreen(
                     .padding(16.dp)
                     .verticalScroll(rememberScrollState())
             ) {
-                Text(
-                    text = "Selamat Datang, ${uiState.userName}!",
-                    style = MaterialTheme.typography.headlineSmall,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    androidx.compose.foundation.Image(
+                        painter = androidx.compose.ui.res.painterResource(id = com.example.spjappapk.R.drawable.logo_spj),
+                        contentDescription = "Logo SPJ",
+                        modifier = Modifier.size(48.dp)
+                    )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column {
+                        Text(
+                            text = "Selamat Datang,",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = uiState.userName,
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
 
                 // Sync Status Banner
                 AnimatedVisibility(
@@ -182,13 +206,28 @@ fun DashboardScreen(
                         value = formatCurrency(uiState.monthlyMetrics.omsetTempo),
                         count = uiState.monthlyMetrics.countTempo,
                         color = Color(0xFFFFF3E0),
-                        contentColor = Color(0xFFE65100)
+                        contentColor = Color(0xFFE65100),
+                        onClick = onNavigateToBillingDetail
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedButton(
+                    onClick = onNavigateToBillingDetail,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.ReceiptLong, contentDescription = null, tint = Color(0xFFE65100))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = if (isManagerOrOwner) "Rincian Nota Tagihan Piutang (Tim)" else "Rincian Nota Tagihan Saya",
+                        color = Color(0xFFE65100)
                     )
                 }
 
                 if (isManagerOrOwner) {
                     Text(
-                        text = "* Klik kartu omset untuk rincian per sales",
+                        text = "* Klik kartu total omset di atas untuk rincian target per sales",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.padding(top = 4.dp, start = 4.dp)
@@ -200,7 +239,8 @@ fun DashboardScreen(
                 // Antrean Omset (Pending/SO/Proses) - Sesuai SOP
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFE1F5FE))
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFE1F5FE)),
+                    onClick = onNavigateToPendingOmzet
                 ) {
                     Row(
                         modifier = Modifier.padding(12.dp),
@@ -243,7 +283,8 @@ fun DashboardScreen(
                             label = "Toko",
                             icon = Icons.Default.Store,
                             color = Color(0xFFF1F8E9),
-                            contentColor = Color(0xFF388E3C)
+                            contentColor = Color(0xFF388E3C),
+                            onClick = onNavigateToTodayVisits
                         )
                     }
                 }
@@ -290,11 +331,7 @@ fun DashboardScreen(
 
 @Composable
 fun formatCurrency(amount: Double): String {
-    return try {
-        "Rp ${String.format(java.util.Locale.getDefault(), "%,.0f", amount)}"
-    } catch (e: Exception) {
-        "Rp 0"
-    }
+    return com.example.spjappapk.util.CurrencyUtil.formatRupiah(amount)
 }
 
 @Composable
@@ -337,12 +374,15 @@ fun MetricMiniCard(
     value: String,
     count: Int,
     color: Color,
-    contentColor: Color
+    contentColor: Color,
+    onClick: (() -> Unit)? = null
 ) {
     Card(
         modifier = modifier,
         colors = CardDefaults.cardColors(containerColor = color),
-        shape = RoundedCornerShape(8.dp)
+        shape = RoundedCornerShape(8.dp),
+        onClick = { onClick?.invoke() },
+        enabled = onClick != null
     ) {
         Column(
             modifier = Modifier.padding(12.dp),

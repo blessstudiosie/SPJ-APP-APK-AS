@@ -4,6 +4,7 @@ import com.example.spjappapk.data.local.dao.InventoryDao
 import com.example.spjappapk.data.local.dao.SyncLogDao
 import com.example.spjappapk.data.local.entities.Inventory
 import com.example.spjappapk.data.local.entities.SyncLog
+import com.example.spjappapk.util.retryNetworkCall
 import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -21,22 +22,32 @@ class InventoryRepository(
         try {
             syncLogDao.insert(SyncLog(event = "Inventory", status = "INFO", message = if (isFullSync) "Full Refresh inventory..." else "Incremental Sync inventory..."))
             
-            val remoteData: List<Inventory>
+            val allRemoteData = mutableListOf<Inventory>()
+            var offset = 0
+            val pageSize = 1000
             val lastUpdate = if (isFullSync) null else inventoryDao.getMaxUpdatedAt()
 
-            withTimeout(60000L) { // Tingkatkan timeout ke 60 detik
-                remoteData = supabaseClient.postgrest["products"].select {
-                    if (isFullSync) {
-                        limit(5000)
-                    } else if (lastUpdate != null) {
-                        filter { gt("updated_at", lastUpdate) }
+            withTimeout(120000L) {
+                while (true) {
+                    val batch = retryNetworkCall(times = 3) {
+                        val response = supabaseClient.postgrest["products"].select {
+                            if (lastUpdate != null) {
+                                filter { gt("updated_at", lastUpdate) }
+                            }
+                            range(offset.toLong(), (offset + pageSize - 1).toLong())
+                        }
+                        response.decodeList<Inventory>()
                     }
-                }.decodeList<Inventory>()
+                    allRemoteData.addAll(batch)
+                    
+                    if (batch.size < pageSize) break
+                    offset += pageSize
+                }
             }
 
-            if (remoteData.isNotEmpty()) {
-                inventoryDao.insertAll(remoteData)
-                syncLogDao.insert(SyncLog(event = "Inventory", status = "SUCCESS", message = "Berhasil menarik ${remoteData.size} produk"))
+            if (allRemoteData.isNotEmpty()) {
+                inventoryDao.insertAll(allRemoteData)
+                syncLogDao.insert(SyncLog(event = "Inventory", status = "SUCCESS", message = "Berhasil menarik ${allRemoteData.size} produk"))
             } else {
                 syncLogDao.insert(SyncLog(event = "Inventory", status = "SUCCESS", message = "Tidak ada data produk baru"))
             }

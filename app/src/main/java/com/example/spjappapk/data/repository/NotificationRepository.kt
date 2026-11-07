@@ -16,21 +16,30 @@ class NotificationRepository(
 
     suspend fun refreshNotifications(userId: String) = withContext(Dispatchers.IO) {
         try {
-            val response = SupabaseClient.client.postgrest["notifications"]
-                .select {
-                    filter {
-                        or {
-                            eq("user_id", userId)
-                            // Allow broadcast notifications where user_id is null
-                            // eq("user_id", null) 
+            val allData = mutableListOf<Notification>()
+            var offset = 0
+            val pageSize = 1000
+
+            while (true) {
+                val response = SupabaseClient.client.postgrest["notifications"]
+                    .select {
+                        filter {
+                            or {
+                                eq("user_id", userId)
+                                // eq("user_id", null) 
+                            }
                         }
+                        range(offset.toLong(), (offset + pageSize - 1).toLong())
                     }
-                    limit(5000)
-                }
-            val data = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
-                .decodeFromString<List<Notification>>(response.data)
+                val batch = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+                    .decodeFromString<List<Notification>>(response.data)
+                allData.addAll(batch)
+
+                if (batch.size < pageSize) break
+                offset += pageSize
+            }
             
-            notificationDao.insertAll(data)
+            notificationDao.insertAll(allData)
         } catch (e: Exception) {
             e.printStackTrace()
         }

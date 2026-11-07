@@ -11,12 +11,20 @@ object DateAsLongSerializer : KSerializer<Long> {
     override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("DateAsLongSerializer", PrimitiveKind.LONG)
 
     override fun deserialize(decoder: Decoder): Long {
-        val dateStr = decoder.decodeString()
-        return DateTimeUtil.parseIso(dateStr)?.time ?: 0L
+        return try {
+            val dateStr = decoder.decodeString()
+            dateStr.toLongOrNull() ?: DateTimeUtil.parseIso(dateStr)?.time ?: 0L
+        } catch (e: Exception) {
+            try {
+                decoder.decodeLong()
+            } catch (e2: Exception) {
+                0L
+            }
+        }
     }
 
     override fun serialize(encoder: Encoder, value: Long) {
-        encoder.encodeString(DateTimeUtil.getIsoFormat().format(java.util.Date(value)))
+        encoder.encodeString(DateTimeUtil.getUtcIsoFormat().format(java.util.Date(value)))
     }
 }
 
@@ -37,7 +45,7 @@ object OptionalDateAsLongSerializer : KSerializer<Long?> {
         if (value == null) {
             encoder.encodeNull()
         } else {
-            encoder.encodeString(DateTimeUtil.getIsoFormat().format(java.util.Date(value)))
+            encoder.encodeString(DateTimeUtil.getUtcIsoFormat().format(java.util.Date(value)))
         }
     }
 }

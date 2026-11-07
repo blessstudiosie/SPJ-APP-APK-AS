@@ -9,6 +9,15 @@ interface SalesMasterDao {
     @Query("SELECT * FROM sales_master ORDER BY order_date DESC")
     fun getAllSalesMaster(): Flow<List<SalesMaster>>
 
+    @Query("SELECT * FROM sales_master WHERE id = :id LIMIT 1")
+    suspend fun getSaleById(id: String): SalesMaster?
+
+    @Query("SELECT * FROM sales_master WHERE is_synced = 0")
+    suspend fun getUnsyncedSales(): List<SalesMaster>
+
+    @Query("UPDATE sales_master SET is_synced = 1 WHERE id = :id")
+    suspend fun markAsSynced(id: String)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSalesMaster(sales: List<SalesMaster>)
 

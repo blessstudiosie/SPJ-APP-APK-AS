@@ -1,11 +1,11 @@
 package com.example.spjappapk.ui.sales
 
+import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -19,77 +19,112 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.example.spjappapk.data.local.entities.*
 import com.example.spjappapk.ui.theme.SPJAPPAPKTheme
+import com.example.spjappapk.util.CurrencyUtil
+import com.example.spjappapk.util.DateTimeUtil
 import com.example.spjappapk.util.ImageUtils
+import kotlinx.serialization.json.Json
 import java.util.*
 
-@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SalesLedgerScreen(
     viewModel: SalesViewModel, 
     currentSalesPersonName: String,
-    onNavigateToAddOrder: () -> Unit
+    onNavigateToAddOrder: () -> Unit,
+    onNavigateToPayments: (String) -> Unit
 ) {
     val salesGrouped by viewModel.sales.collectAsState()
     val finalizedSales by viewModel.finalizedSales.collectAsState()
     val isRemoteLoading by viewModel.isRemoteLoading.collectAsState()
-    val products by viewModel.products.collectAsState()
-    val customers by viewModel.customers.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
-    var selectedTab by remember { mutableIntStateOf(0) }
+    
+    var showQueueSheet by remember { mutableStateOf(false) }
     var selectedSaleForReceipt by remember { mutableStateOf<SalesMaster?>(null) }
     var selectedSaleItems by remember { mutableStateOf<List<SalesOrderItem>?>(null) }
 
-    LaunchedEffect(selectedSaleForReceipt) {
-        if (selectedSaleForReceipt != null && selectedSaleForReceipt!!.nota != "PENDING" && selectedSaleItems == null) {
-            selectedSaleItems = viewModel.getSalesDetailsWithNames(selectedSaleForReceipt!!.id)
+    val totalQueueCount = remember(salesGrouped) {
+        salesGrouped.values.sumOf { it.size }
+    }
+
+    LaunchedEffect(selectedSaleForReceipt?.id) {
+        val currentSale = selectedSaleForReceipt
+        if (currentSale != null) {
+            selectedSaleItems = null
+            if (currentSale.nota != "PENDING") {
+                selectedSaleItems = viewModel.getSalesDetailsWithNames(currentSale.id)
+            }
+        } else {
+            selectedSaleItems = null
         }
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Penjualan") },
+                title = { Text("Penjualan Master") },
                 actions = {
-                    if (selectedTab == 1) {
-                        IconButton(onClick = { viewModel.fetchFinalizedSales() }) {
-                            Icon(Icons.Default.Refresh, contentDescription = "Refresh Remote")
+                    IconButton(onClick = { showQueueSheet = true }) {
+                        BadgedBox(badge = {
+                            if (totalQueueCount > 0) {
+                                Badge { Text("$totalQueueCount") }
+                            }
+                        }) {
+                            Icon(Icons.Default.HourglassEmpty, contentDescription = "Lihat Antrean")
                         }
+                    }
+                    IconButton(onClick = { viewModel.fetchFinalizedSales() }) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Refresh Remote")
                     }
                 }
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = onNavigateToAddOrder) {
-                Icon(Icons.Default.Add, contentDescription = "Add Order")
-            }
+            ExtendedFloatingActionButton(
+                onClick = onNavigateToAddOrder,
+                icon = { Icon(Icons.Default.Add, contentDescription = "Tambah Pesanan") },
+                text = { Text("Tambah Pesanan") }
+            )
         }
     ) { padding ->
-        Column(modifier = Modifier.padding(padding)) {
-            TabRow(selectedTabIndex = selectedTab) {
-                Tab(
-                    selected = selectedTab == 0,
-                    onClick = { selectedTab = 0 },
-                    text = { Text("Antrean (Queue)") }
-                )
-                Tab(
-                    selected = selectedTab == 1,
-                    onClick = { selectedTab = 1 },
-                    text = { Text("Final (Master)") }
-                )
+        Column(modifier = Modifier.padding(padding).fillMaxSize()) {
+            // Action Buttons Bar (Lihat Antrean & Tambah Pesanan)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = { showQueueSheet = true },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.HourglassEmpty, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Antrean ($totalQueueCount)")
+                }
+
+                Button(
+                    onClick = onNavigateToAddOrder,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.Add, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Tambah Order")
+                }
             }
 
+            // Search Bar
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { viewModel.updateSearchQuery(it) },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
-                placeholder = { Text(if (selectedTab == 0) "Cari di antrean..." else "Cari penjualan final...") },
+                    .padding(horizontal = 16.dp),
+                placeholder = { Text("Cari No Nota, Pelanggan, atau Sales...") },
                 leadingIcon = { Icon(Icons.Default.Search, null) },
                 singleLine = true,
                 trailingIcon = {
@@ -101,80 +136,59 @@ fun SalesLedgerScreen(
                 }
             )
 
-            if (selectedTab == 0) {
-                if (salesGrouped.isEmpty()) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("Tidak ada antrean pesanan aktif")
-                    }
-                } else {
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        salesGrouped.forEach { (status, orders) ->
-                            stickyHeader {
-                                Surface(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    color = MaterialTheme.colorScheme.secondaryContainer
-                                ) {
-                                    Text(
-                                        text = "Status: $status",
-                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                                        style = MaterialTheme.typography.labelLarge,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSecondaryContainer
-                                    )
-                                }
-                            }
-                            items(orders) { order ->
-                                SaleItem(
-                                    order = order,
-                                    onClick = { 
-                                        selectedSaleForReceipt = SalesMaster(
-                                            id = order.remoteId ?: "local-${order.id}",
-                                            nota = order.remoteId ?: "PENDING",
-                                            orderDate = order.timestamp,
-                                            customerName = order.customerName,
-                                            totalAmount = order.totalAmount,
-                                            salesName = order.salesPersonName,
-                                            status = order.status
-                                        )
-                                        try {
-                                            selectedSaleItems = kotlinx.serialization.json.Json.decodeFromString<List<SalesOrderItem>>(order.details)
-                                        } catch (e: Exception) {
-                                            selectedSaleItems = emptyList()
-                                        }
-                                    }
-                                )
-                                HorizontalDivider()
-                            }
-                        }
-                    }
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Direct Finalized Sales List
+            if (isRemoteLoading && finalizedSales.isEmpty()) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+            } else if (finalizedSales.isEmpty()) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("Tidak ada data penjualan final")
                 }
             } else {
-                if (isRemoteLoading) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
-                    }
-                } else {
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        items(finalizedSales) { sale ->
-                            RemoteSaleItem(
-                                sale = sale,
-                                onDownloadClick = { selectedSaleForReceipt = it },
-                                onClick = { selectedSaleForReceipt = it }
-                            )
-                            HorizontalDivider()
-                        }
-                        if (finalizedSales.isEmpty()) {
-                            item {
-                                Box(modifier = Modifier.fillParentMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
-                                    Text("Tidak ada data penjualan final")
-                                }
-                            }
-                        }
+                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    items(finalizedSales) { sale ->
+                        RemoteSaleItem(
+                            sale = sale,
+                            onDownloadClick = {
+                                selectedSaleItems = null
+                                selectedSaleForReceipt = it
+                            },
+                            onClick = { onNavigateToPayments(it.id) }
+                        )
+                        HorizontalDivider()
                     }
                 }
             }
         }
 
+        // BottomSheet to display Queue Orders
+        if (showQueueSheet) {
+            QueueOrdersBottomSheet(
+                salesGrouped = salesGrouped,
+                onDismiss = { showQueueSheet = false },
+                onOrderClick = { order ->
+                    selectedSaleForReceipt = SalesMaster(
+                        id = order.remoteId ?: "local-${order.id}",
+                        nota = order.remoteId ?: "PENDING",
+                        orderDate = order.timestamp,
+                        customerName = order.customerName,
+                        totalAmount = order.totalAmount,
+                        salesName = order.salesPersonName,
+                        status = order.status
+                    )
+                    try {
+                        selectedSaleItems = Json.decodeFromString<List<SalesOrderItem>>(order.details)
+                    } catch (e: Exception) {
+                        selectedSaleItems = emptyList()
+                    }
+                }
+            )
+        }
+
+        // Receipt Dialog
         if (selectedSaleForReceipt != null) {
             ReceiptDialog(
                 sale = selectedSaleForReceipt!!,
@@ -188,14 +202,85 @@ fun SalesLedgerScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun QueueOrdersBottomSheet(
+    salesGrouped: Map<String, List<SalesOrder>>,
+    onDismiss: () -> Unit,
+    onOrderClick: (SalesOrder) -> Unit
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Data Antrean Pesanan (Queue)",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                IconButton(onClick = onDismiss) {
+                    Icon(Icons.Default.Close, contentDescription = "Tutup")
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            if (salesGrouped.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxWidth().height(180.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("Tidak ada antrean pesanan aktif saat ini.")
+                }
+            } else {
+                LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 450.dp)) {
+                    salesGrouped.forEach { (status, orders) ->
+                        item {
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                color = MaterialTheme.colorScheme.secondaryContainer
+                            ) {
+                                Text(
+                                    text = "Status: $status (${orders.size} Order)",
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            }
+                        }
+                        items(orders) { order ->
+                            SaleItem(
+                                order = order,
+                                onClick = {
+                                    onOrderClick(order)
+                                    onDismiss()
+                                }
+                            )
+                            HorizontalDivider()
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 fun RemoteSaleItem(sale: SalesMaster, onDownloadClick: (SalesMaster) -> Unit, onClick: (SalesMaster) -> Unit) {
     ListItem(
-        headlineContent = { Text(sale.customerName ?: "Pelanggan Tanpa Nama") },
+        headlineContent = { Text(sale.customerName ?: "Pelanggan Tanpa Nama", fontWeight = FontWeight.Bold) },
         supportingContent = {
             Column {
                 Text("Nota: ${sale.nota}")
-                Text("Tgl: ${com.example.spjappapk.util.DateTimeUtil.formatDateOnly(sale.orderDate)}")
+                Text("Tgl: ${DateTimeUtil.formatDateOnly(sale.orderDate)}")
                 Text("Sales: ${sale.salesName}", style = MaterialTheme.typography.bodySmall)
             }
         },
@@ -203,7 +288,7 @@ fun RemoteSaleItem(sale: SalesMaster, onDownloadClick: (SalesMaster) -> Unit, on
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(horizontalAlignment = Alignment.End) {
                     Text(
-                        "Rp${String.format(Locale.getDefault(), "%,.0f", sale.totalAmount)}",
+                        CurrencyUtil.formatRupiah(sale.totalAmount),
                         color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.Bold
                     )
@@ -223,7 +308,7 @@ fun RemoteSaleItem(sale: SalesMaster, onDownloadClick: (SalesMaster) -> Unit, on
 
 @Composable
 fun SaleItem(order: SalesOrder, onClick: (SalesOrder) -> Unit) {
-    val dateText = com.example.spjappapk.util.DateTimeUtil.formatDisplay(order.timestamp)
+    val dateText = DateTimeUtil.formatDisplay(order.timestamp)
     
     ListItem(
         headlineContent = { Text(order.customerName.ifEmpty { "Order #${order.id}" }) },
@@ -268,9 +353,9 @@ fun ReceiptDialog(sale: SalesMaster, items: List<SalesOrderItem>?, onDismiss: ()
                     val bitmap = ImageUtils.createBitmapFromView(view)
                     val uri = ImageUtils.saveBitmapToGallery(context, bitmap, "Nota_${sale.nota}")
                     if (uri != null) {
-                        android.widget.Toast.makeText(context, "Nota disimpan ke galeri", android.widget.Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Nota disimpan ke galeri", Toast.LENGTH_SHORT).show()
                     } else {
-                        android.widget.Toast.makeText(context, "Gagal menyimpan nota", android.widget.Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Gagal menyimpan nota", Toast.LENGTH_SHORT).show()
                     }
                     onDismiss()
                 }
@@ -335,7 +420,7 @@ fun ReceiptContent(sale: SalesMaster, items: List<SalesOrderItem>) {
             
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("Nota: ${sale.nota}", style = MaterialTheme.typography.bodySmall, color = Color.Black)
-                Text("Tgl: ${com.example.spjappapk.util.DateTimeUtil.formatDateOnly(sale.orderDate)}", style = MaterialTheme.typography.bodySmall, color = Color.Black)
+                Text("Tgl: ${DateTimeUtil.formatDateOnly(sale.orderDate)}", style = MaterialTheme.typography.bodySmall, color = Color.Black)
             }
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = Color.LightGray)
             
@@ -355,16 +440,16 @@ fun ReceiptContent(sale: SalesMaster, items: List<SalesOrderItem>) {
                 Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(item.displayProductName, style = MaterialTheme.typography.bodySmall, color = Color.Black)
-                        Text("${if (item.quantity % 1.0 == 0.0) item.quantity.toInt() else item.quantity} x Rp ${String.format(Locale.getDefault(), "%,.0f", item.displayPrice)}", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                        Text("${if (item.quantity % 1.0 == 0.0) item.quantity.toInt() else item.quantity} x ${CurrencyUtil.formatRupiah(item.displayPrice)}", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
                     }
-                    Text("Rp ${String.format(Locale.getDefault(), "%,.0f", item.displayPrice * item.quantity)}", style = MaterialTheme.typography.bodySmall, color = Color.Black)
+                    Text(CurrencyUtil.formatRupiah(item.displayPrice * item.quantity), style = MaterialTheme.typography.bodySmall, color = Color.Black)
                 }
             }
             
             HorizontalDivider(color = Color.Black)
             Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("TOTAL", fontWeight = FontWeight.Bold, color = Color.Black)
-                Text("Rp${String.format(Locale.getDefault(), "%,.0f", sale.totalAmount)}", fontWeight = FontWeight.Bold, color = Color.Black)
+                Text(CurrencyUtil.formatRupiah(sale.totalAmount), fontWeight = FontWeight.Bold, color = Color.Black)
             }
             HorizontalDivider(color = Color.Black)
             
