@@ -12,13 +12,13 @@ interface SalesDetailDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(details: List<SalesDetailEntity>)
 
-    @Query("SELECT * FROM sales_details_cache WHERE sale_id = :saleId")
+    @Query("SELECT * FROM sales_details_cache WHERE sale_id = :saleId AND is_deleted = 0")
     suspend fun getDetailsBySaleId(saleId: String): List<SalesDetailEntity>
 
-    @Query("SELECT * FROM sales_details_cache WHERE sale_id IN (:saleIds)")
+    @Query("SELECT * FROM sales_details_cache WHERE sale_id IN (:saleIds) AND is_deleted = 0")
     suspend fun getDetailsBySaleIds(saleIds: List<String>): List<SalesDetailEntity>
 
-    @Query("SELECT * FROM sales_details_cache")
+    @Query("SELECT * FROM sales_details_cache WHERE is_deleted = 0")
     fun getAllDetailsFlow(): Flow<List<SalesDetailEntity>>
 
     @Query("DELETE FROM sales_details_cache")

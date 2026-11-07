@@ -39,8 +39,17 @@ data class PaymentEntity(
     @ColumnInfo(name = "is_synced")
     val isSynced: Boolean = false,
 
+    @SerialName("confirmed_at")
+    @ColumnInfo(name = "confirmed_at")
+    @Serializable(with = com.example.spjappapk.util.OptionalDateAsLongSerializer::class)
+    val confirmedAt: Long? = null,
+
     @SerialName("created_at")
     @ColumnInfo(name = "created_at")
     @Serializable(with = com.example.spjappapk.util.DateAsLongSerializer::class)
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+
+    @SerialName("updated_at")
+    @ColumnInfo(name = "updated_at")
+    val updatedAt: String? = null
 ) : Parcelable

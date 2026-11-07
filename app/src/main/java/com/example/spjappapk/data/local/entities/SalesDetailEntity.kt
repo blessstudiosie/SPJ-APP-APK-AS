@@ -38,10 +38,18 @@ data class SalesDetailEntity(
     @SerialName("created_at")
     @ColumnInfo(name = "created_at")
     val createdAt: String? = null,
+
+    @SerialName("updated_at")
+    @ColumnInfo(name = "updated_at")
+    val updatedAt: String? = null,
     
     val nota: String? = null,
     
     @SerialName("is_checked_system2")
     @ColumnInfo(name = "is_checked_system2")
-    val isCheckedSystem2: Boolean = false
+    val isCheckedSystem2: Boolean = false,
+
+    @SerialName("is_deleted")
+    @ColumnInfo(name = "is_deleted")
+    val isDeleted: Boolean = false
 )

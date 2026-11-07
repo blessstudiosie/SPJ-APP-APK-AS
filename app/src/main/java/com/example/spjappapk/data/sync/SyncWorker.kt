@@ -187,7 +187,25 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                         put("notes", payment.notes ?: "")
                     }
 
-                    SupabaseClient.client.postgrest["payments"].upsert(insertData)
+                    try {
+                        SupabaseClient.client.postgrest["payments"].insert(insertData)
+                    } catch (insertEx: Exception) {
+                        val msg = insertEx.message ?: ""
+                        if (msg.contains("23505") || msg.contains("duplicate key")) {
+                            try {
+                                SupabaseClient.client.postgrest["payments"].update(insertData) {
+                                    filter { eq("id", payment.id) }
+                                }
+                            } catch (updateEx: Exception) {
+                                SupabaseClient.client.postgrest["payments"].delete {
+                                    filter { eq("id", payment.id) }
+                                }
+                                SupabaseClient.client.postgrest["payments"].insert(insertData)
+                            }
+                        } else {
+                            throw insertEx
+                        }
+                    }
                     database.paymentDao().markAsSynced(payment.id)
                     logSync("Payments", "SUCCESS", "Payment for sale ${payment.saleId} synced")
                 } catch (e: Exception) {

@@ -29,10 +29,16 @@ data class SalesPersonEntity(
     @SerialName("is_active")
     @ColumnInfo(name = "is_active")
     val isActive: Boolean = true,
+    @SerialName("employment_status")
+    @ColumnInfo(name = "employment_status")
+    val employmentStatus: String? = "AKTIF",
     @SerialName("resign_date")
     @ColumnInfo(name = "resign_date")
     val resignDate: String? = null,
     @SerialName("resign_reason")
     @ColumnInfo(name = "resign_reason")
-    val resignReason: String? = null
+    val resignReason: String? = null,
+    @SerialName("is_deleted")
+    @ColumnInfo(name = "is_deleted")
+    val isDeleted: Boolean = false
 ) : Parcelable

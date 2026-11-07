@@ -64,7 +64,19 @@ data class Inventory(
     @ColumnInfo(name = "description")
     val description: String? = "",
 
+    @SerialName("price_updated_at")
+    @ColumnInfo(name = "price_updated_at")
+    val priceUpdatedAt: String? = null,
+
+    @SerialName("created_at")
+    @ColumnInfo(name = "created_at")
+    val createdAt: String? = null,
+
     @SerialName("updated_at")
     @ColumnInfo(name = "updated_at")
-    val updatedAt: String? = null
+    val updatedAt: String? = null,
+
+    @SerialName("is_deleted")
+    @ColumnInfo(name = "is_deleted")
+    val isDeleted: Boolean = false
 ) : Parcelable

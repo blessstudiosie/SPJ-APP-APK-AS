@@ -53,6 +53,10 @@ data class Customer(
     @ColumnInfo(name = "updated_at")
     val updatedAt: String? = null,
 
+    @SerialName("is_deleted")
+    @ColumnInfo(name = "is_deleted")
+    val isDeleted: Boolean = false,
+
     @ColumnInfo(name = "sync_status")
     val syncStatus: String = "SUCCESS" // SUCCESS, PENDING
 ) : Parcelable

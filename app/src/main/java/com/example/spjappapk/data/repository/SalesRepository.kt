@@ -183,8 +183,10 @@ class SalesRepository(
             subtotal = subtotal,
             itemName = itemName,
             createdAt = createdAt,
+            updatedAt = updatedAt,
             nota = nota,
-            isCheckedSystem2 = isCheckedSystem2
+            isCheckedSystem2 = isCheckedSystem2,
+            isDeleted = isDeleted
         )
     }
 
@@ -199,8 +201,10 @@ class SalesRepository(
             subtotal = subtotal,
             itemName = itemName,
             createdAt = createdAt,
+            updatedAt = updatedAt,
             nota = nota,
-            isCheckedSystem2 = isCheckedSystem2
+            isCheckedSystem2 = isCheckedSystem2,
+            isDeleted = isDeleted
         )
     }
 

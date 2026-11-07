@@ -24,7 +24,7 @@ import com.example.spjappapk.data.local.entities.SalesOrder
 import com.example.spjappapk.data.local.entities.SyncLog
 import com.example.spjappapk.data.local.entities.Visit
 
-@Database(entities = [Visit::class, Inventory::class, SalesOrder::class, SalesMaster::class, Customer::class, SyncLog::class, Notification::class, SalesPersonEntity::class, SalesDetailEntity::class, PaymentEntity::class], version = 16, exportSchema = false)
+@Database(entities = [Visit::class, Inventory::class, SalesOrder::class, SalesMaster::class, Customer::class, SyncLog::class, Notification::class, SalesPersonEntity::class, SalesDetailEntity::class, PaymentEntity::class], version = 17, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun visitDao(): com.example.spjappapk.data.local.dao.VisitDao
@@ -42,6 +42,24 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
+        private val MIGRATION_16_17 = object : androidx.room.migration.Migration(16, 17) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                fun safeExec(sql: String) {
+                    try { db.execSQL(sql) } catch (_: Exception) {}
+                }
+                safeExec("ALTER TABLE payments ADD COLUMN confirmed_at INTEGER")
+                safeExec("ALTER TABLE payments ADD COLUMN updated_at TEXT")
+                safeExec("ALTER TABLE sales_details_cache ADD COLUMN updated_at TEXT")
+                safeExec("ALTER TABLE sales_details_cache ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0")
+                safeExec("ALTER TABLE customers ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0")
+                safeExec("ALTER TABLE inventory ADD COLUMN price_updated_at TEXT")
+                safeExec("ALTER TABLE inventory ADD COLUMN created_at TEXT")
+                safeExec("ALTER TABLE inventory ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0")
+                safeExec("ALTER TABLE sales_persons_profile ADD COLUMN employment_status TEXT DEFAULT 'AKTIF'")
+                safeExec("ALTER TABLE sales_persons_profile ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -49,6 +67,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "spj_database"
                 )
+                .addMigrations(MIGRATION_16_17)
                 .fallbackToDestructiveMigration()
                 .build()
                 INSTANCE = instance

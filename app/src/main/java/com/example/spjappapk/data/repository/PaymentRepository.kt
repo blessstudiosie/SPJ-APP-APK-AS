@@ -79,7 +79,34 @@ class PaymentRepository(
         val unsynced = paymentDao.getUnsyncedPayments()
         for (payment in unsynced) {
             try {
-                SupabaseClient.client.postgrest["payments"].insert(payment)
+                val payload = kotlinx.serialization.json.buildJsonObject {
+                    put("id", kotlinx.serialization.json.JsonPrimitive(payment.id))
+                    put("sale_id", kotlinx.serialization.json.JsonPrimitive(payment.saleId))
+                    put("payment_date", kotlinx.serialization.json.JsonPrimitive(com.example.spjappapk.util.DateTimeUtil.getUtcIsoFormat().format(java.util.Date(payment.paymentDate))))
+                    put("amount", kotlinx.serialization.json.JsonPrimitive(payment.amount))
+                    put("payment_method", kotlinx.serialization.json.JsonPrimitive(payment.paymentMethod))
+                    put("status", kotlinx.serialization.json.JsonPrimitive(payment.status))
+                    put("notes", kotlinx.serialization.json.JsonPrimitive(payment.notes ?: ""))
+                }
+                try {
+                    SupabaseClient.client.postgrest["payments"].insert(payload)
+                } catch (insertEx: Exception) {
+                    val msg = insertEx.message ?: ""
+                    if (msg.contains("23505") || msg.contains("duplicate key")) {
+                        try {
+                            SupabaseClient.client.postgrest["payments"].update(payload) {
+                                filter { eq("id", payment.id) }
+                            }
+                        } catch (updateEx: Exception) {
+                            SupabaseClient.client.postgrest["payments"].delete {
+                                filter { eq("id", payment.id) }
+                            }
+                            SupabaseClient.client.postgrest["payments"].insert(payload)
+                        }
+                    } else {
+                        throw insertEx
+                    }
+                }
                 paymentDao.markAsSynced(payment.id)
             } catch (e: Exception) {
                 e.printStackTrace()

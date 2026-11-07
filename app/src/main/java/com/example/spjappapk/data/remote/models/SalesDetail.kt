@@ -14,6 +14,8 @@ data class SalesDetail(
     val subtotal: Double,
     @SerialName("item_name") val itemName: String? = null,
     @SerialName("created_at") val createdAt: String? = null,
+    @SerialName("updated_at") val updatedAt: String? = null,
     val nota: String? = null,
-    @SerialName("is_checked_system2") val isCheckedSystem2: Boolean = false
+    @SerialName("is_checked_system2") val isCheckedSystem2: Boolean = false,
+    @SerialName("is_deleted") val isDeleted: Boolean = false
 )
