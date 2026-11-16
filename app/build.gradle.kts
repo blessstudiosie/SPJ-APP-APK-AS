@@ -19,8 +19,8 @@ android {
         applicationId = "com.example.spjappapk"
         minSdk = 24
         targetSdk = 37
-        versionCode = 4
-        versionName = "1.3"
+        versionCode = 5
+        versionName = "1.4"
 
         val sdf = SimpleDateFormat("dd/MM/yy HH:mm", Locale.getDefault())
         sdf.timeZone = TimeZone.getTimeZone("UTC")
@@ -51,7 +51,7 @@ android {
 }
 
 base {
-    archivesName.set("SPJ_App_v1.3")
+    archivesName.set("SPJ_App_v1.4")
 }
 
 dependencies {

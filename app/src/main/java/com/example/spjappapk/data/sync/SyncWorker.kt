@@ -41,7 +41,8 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             salesPersonName: String?,
             fallbackLat: Double? = null,
             fallbackLng: Double? = null
-        ): String? {
+        ): Pair<String?, String> {
+            val cleanName = customerName.trim()
             return try {
                 // 1. Cek apakah ID konsumen sudah ada di tabel customers Supabase
                 val byIdResp = SupabaseClient.client.postgrest["customers"].select {
@@ -49,20 +50,21 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                 }
                 val byIdArr = Json.parseToJsonElement(byIdResp.data).jsonArray
                 if (byIdArr.isNotEmpty()) {
-                    return customerId
+                    val serverName = byIdArr[0].jsonObject["name"]?.toString()?.removeSurrounding("\"") ?: cleanName
+                    return Pair(customerId, serverName)
                 }
 
                 // 2. Cek apakah nama toko sudah ada di Supabase dengan ID yang berbeda
-                val cleanName = customerName.trim()
                 if (cleanName.isNotEmpty()) {
                     val byNameResp = SupabaseClient.client.postgrest["customers"].select {
                         filter { ilike("name", cleanName) }
                     }
                     val byNameArr = Json.parseToJsonElement(byNameResp.data).jsonArray
                     if (byNameArr.isNotEmpty()) {
-                        val existingId = byNameArr[0].jsonObject["id"]?.toString()?.replace("\"", "")
+                        val existingId = byNameArr[0].jsonObject["id"]?.toString()?.removeSurrounding("\"")
+                        val existingName = byNameArr[0].jsonObject["name"]?.toString()?.removeSurrounding("\"") ?: cleanName
                         if (!existingId.isNullOrBlank()) {
-                            return existingId
+                            return Pair(existingId, existingName)
                         }
                     }
                 }
@@ -72,10 +74,11 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                 val validRoute = localCust?.deliveryRoute?.uppercase()?.trim()?.takeIf {
                     it in listOf("LOBAR-MATARAM", "LOTIM", "LOTENG", "KLU")
                 } ?: "LOBAR-MATARAM"
+                val targetName = (localCust?.name ?: cleanName).trim().ifEmpty { "Toko $customerId" }
 
                 val customerPayload = buildJsonObject {
                     put("id", customerId)
-                    put("name", (localCust?.name ?: cleanName).trim().ifEmpty { "Toko $customerId" })
+                    put("name", targetName)
                     put("address", localCust?.address ?: "")
                     put("owner_name", localCust?.ownerName ?: "")
                     put("phone", localCust?.phone ?: "")
@@ -89,13 +92,47 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                     if (!spName.isNullOrBlank()) put("sales_person", spName)
                 }
 
-                SupabaseClient.client.postgrest["customers"].upsert(customerPayload)
+                try {
+                    SupabaseClient.client.postgrest["customers"].upsert(customerPayload)
+                } catch (upsertEx: Exception) {
+                    val errMsg = upsertEx.message ?: ""
+                    if (errMsg.contains("23503") || errMsg.contains("foreign key")) {
+                        // Retry tanpa sales_person FK agar customer tetap terbuat di server
+                        val fallbackCustomerPayload = buildJsonObject {
+                            put("id", customerId)
+                            put("name", targetName)
+                            put("address", localCust?.address ?: "")
+                            put("owner_name", localCust?.ownerName ?: "")
+                            put("phone", localCust?.phone ?: "")
+                            put("latitude", localCust?.latitude ?: fallbackLat ?: 0.0)
+                            put("longitude", localCust?.longitude ?: fallbackLng ?: 0.0)
+                            put("jalur_pengiriman", validRoute)
+                            put("limit_piutang", localCust?.creditLimit ?: 0.0)
+                        }
+                        SupabaseClient.client.postgrest["customers"].upsert(fallbackCustomerPayload)
+                    } else if (errMsg.contains("23505") || errMsg.contains("duplicate key")) {
+                        val dupResp = SupabaseClient.client.postgrest["customers"].select {
+                            filter { ilike("name", targetName) }
+                        }
+                        val dupArr = Json.parseToJsonElement(dupResp.data).jsonArray
+                        if (dupArr.isNotEmpty()) {
+                            val existingId = dupArr[0].jsonObject["id"]?.toString()?.removeSurrounding("\"")
+                            val existingName = dupArr[0].jsonObject["name"]?.toString()?.removeSurrounding("\"") ?: targetName
+                            if (!existingId.isNullOrBlank()) {
+                                customerDao.updateSyncStatus(customerId, "SUCCESS")
+                                return Pair(existingId, existingName)
+                            }
+                        }
+                    } else {
+                        throw upsertEx
+                    }
+                }
                 customerDao.updateSyncStatus(customerId, "SUCCESS")
-                logSync("Customers", "SUCCESS", "Auto-synced customer ${(localCust?.name ?: cleanName)} to server")
-                customerId
+                logSync("Customers", "SUCCESS", "Auto-synced customer $targetName to server")
+                Pair(customerId, targetName)
             } catch (e: Exception) {
                 logSync("Customers", "WARN", "Could not auto-verify customer $customerName: ${e.message}")
-                null
+                Pair(null, cleanName)
             }
         }
 
@@ -132,7 +169,27 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                         }
                     }
 
-                    SupabaseClient.client.postgrest["customers"].upsert(insertData)
+                    try {
+                        SupabaseClient.client.postgrest["customers"].upsert(insertData)
+                    } catch (fkEx: Exception) {
+                        val fkMsg = fkEx.message ?: ""
+                        if (fkMsg.contains("23503") || fkMsg.contains("foreign key")) {
+                            val fallbackCustData = buildJsonObject {
+                                put("id", customer.remoteId)
+                                put("name", customer.name.trim())
+                                put("address", customer.address ?: "")
+                                put("owner_name", customer.ownerName ?: "")
+                                put("phone", customer.phone ?: "")
+                                put("latitude", customer.latitude ?: 0.0)
+                                put("longitude", customer.longitude ?: 0.0)
+                                put("jalur_pengiriman", validRoute)
+                                put("limit_piutang", customer.creditLimit)
+                            }
+                            SupabaseClient.client.postgrest["customers"].upsert(fallbackCustData)
+                        } else {
+                            throw fkEx
+                        }
+                    }
                     customerDao.updateSyncStatus(customer.remoteId, "SUCCESS")
                     logSync("Customers", "SUCCESS", "Customer ${customer.name} synced to server")
                 } catch (e: Exception) {
@@ -155,8 +212,8 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                 try {
                     val checkInDateIso = com.example.spjappapk.util.DateTimeUtil.getUtcIsoFormat().format(java.util.Date(visit.timestamp))
 
-                    // Pastikan customer_id sudah terdaftar di tabel customers Supabase (mencegah error FK 23503)
-                    val resolvedCustomerId = ensureCustomerExistsOnServer(
+                    // Pastikan customer_id & customer_name sudah terdaftar di tabel customers Supabase (mencegah error FK 23503)
+                    val (resolvedCustomerId, resolvedCustomerName) = ensureCustomerExistsOnServer(
                         customerId = visit.customerId,
                         customerName = visit.customerName,
                         salesPersonId = visit.userId,
@@ -170,13 +227,19 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                         put("sales_person", visit.salesPersonName)
                         if (!resolvedCustomerId.isNullOrBlank()) {
                             put("customer_id", resolvedCustomerId)
+                            put("customer_name", resolvedCustomerName)
                         } else {
                             put("customer_id", JsonNull)
+                            put("customer_name", JsonNull)
                         }
-                        put("customer_name", visit.customerName)
                         put("latitude", visit.locationLat)
                         put("longitude", visit.locationLng)
-                        put("notes", visit.notes ?: "")
+                        val noteText = if (resolvedCustomerId.isNullOrBlank()) {
+                            "[Toko: ${visit.customerName}] ${visit.notes ?: ""}".trim()
+                        } else {
+                            visit.notes ?: ""
+                        }
+                        put("notes", noteText)
                         put("check_in_date", checkInDateIso)
                     }
 
@@ -187,14 +250,23 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                     } catch (fkEx: Exception) {
                         val errMsg = fkEx.message ?: ""
                         if (errMsg.contains("23503") || errMsg.contains("foreign key")) {
+                            // Fallback: null-kan FK yang bermasalah (customer_id & customer_name keduanya punya FK ke tabel customers)
                             val fallbackData = buildJsonObject {
-                                put("sales_person_id", visit.userId)
-                                put("sales_person", visit.salesPersonName)
+                                if (!errMsg.contains("sales_person_id")) {
+                                    put("sales_person_id", visit.userId)
+                                } else {
+                                    put("sales_person_id", JsonNull)
+                                }
+                                if (!errMsg.contains("check_in_logs_sales_person_fkey")) {
+                                    put("sales_person", visit.salesPersonName)
+                                } else {
+                                    put("sales_person", JsonNull)
+                                }
                                 put("customer_id", JsonNull)
-                                put("customer_name", visit.customerName)
+                                put("customer_name", JsonNull)
                                 put("latitude", visit.locationLat)
                                 put("longitude", visit.locationLng)
-                                put("notes", visit.notes ?: "")
+                                put("notes", "[Toko: ${visit.customerName}] ${visit.notes ?: ""}".trim())
                                 put("check_in_date", checkInDateIso)
                             }
                             SupabaseClient.client.postgrest["check_in_logs"].insert(fallbackData) {
@@ -252,18 +324,19 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                         }
                     }
 
-                    val resolvedOrderCustomerId = ensureCustomerExistsOnServer(
+                    val (resolvedCustomerIdOrNull, resolvedOrderCustomerName) = ensureCustomerExistsOnServer(
                         customerId = order.customerId,
                         customerName = order.customerName,
                         salesPersonId = order.salesPersonId,
                         salesPersonName = order.salesPersonName
-                    ) ?: order.customerId
+                    )
+                    val resolvedOrderCustomerId = resolvedCustomerIdOrNull ?: order.customerId
 
                     val insertData = buildJsonObject {
                         put("id", saleId)
                         put("requested_by", order.salesPersonName)
                         put("sales_person_id", order.salesPersonId)
-                        put("customer_name", order.customerName)
+                        put("customer_name", resolvedOrderCustomerName)
                         put("customer_id", resolvedOrderCustomerId)
                         put("items", if (parsedItems.isNotEmpty()) enrichedItemsJson else Json.parseToJsonElement(order.details))
                         put("notes", if (extraNote.isNotBlank()) "$notaNum | $extraNote" else notaNum)
@@ -297,8 +370,13 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                         val saleMasterJson = buildJsonObject {
                             put("id", finalRemoteId)
                             put("nota", notaNum)
-                            put("customer_id", resolvedOrderCustomerId)
-                            put("customer_name", order.customerName)
+                            if (!resolvedCustomerIdOrNull.isNullOrBlank()) {
+                                put("customer_id", resolvedOrderCustomerId)
+                                put("customer_name", resolvedOrderCustomerName)
+                            } else {
+                                put("customer_id", JsonNull)
+                                put("customer_name", JsonNull)
+                            }
                             put("sales_person_id", order.salesPersonId)
                             put("sales_person", order.salesPersonName)
                             put("order_date", nowIso)

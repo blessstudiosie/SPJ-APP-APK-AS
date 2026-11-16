@@ -96,7 +96,27 @@ class CustomerRepository(
             }
 
             // Coba push langsung menggunakan upsert
-            supabaseClient.postgrest["customers"].upsert(insertData)
+            try {
+                supabaseClient.postgrest["customers"].upsert(insertData)
+            } catch (fkEx: Exception) {
+                val msg = fkEx.message ?: ""
+                if (msg.contains("23503") || msg.contains("foreign key")) {
+                    val fallbackInsert = buildJsonObject {
+                        put("id", customer.remoteId)
+                        put("name", customer.name.trim())
+                        put("address", customer.address ?: "")
+                        put("owner_name", customer.ownerName ?: "")
+                        put("phone", customer.phone ?: "")
+                        put("latitude", customer.latitude ?: 0.0)
+                        put("longitude", customer.longitude ?: 0.0)
+                        put("jalur_pengiriman", customer.deliveryRoute ?: "LOBAR-MATARAM")
+                        put("limit_piutang", customer.creditLimit)
+                    }
+                    supabaseClient.postgrest["customers"].upsert(fallbackInsert)
+                } else {
+                    throw fkEx
+                }
+            }
             
             // Jika berhasil push, update status jadi SUCCESS
             customerDao.updateSyncStatus(customer.remoteId, "SUCCESS")
@@ -161,7 +181,17 @@ class CustomerRepository(
                     if (!salesId.isNullOrBlank()) put("sales_person_id", salesId)
                     if (!salesName.isNullOrBlank()) put("sales_person", salesName)
                 }
-                supabaseClient.postgrest["customers"].upsert(data)
+                try {
+                    supabaseClient.postgrest["customers"].upsert(data)
+                } catch (fkEx: Exception) {
+                    val fallbackData = buildJsonObject {
+                        put("id", remoteId)
+                        put("name", name.trim())
+                        put("address", "Auto-generated from Visit")
+                        put("jalur_pengiriman", "LOBAR-MATARAM")
+                    }
+                    supabaseClient.postgrest["customers"].upsert(fallbackData)
+                }
                 android.util.Log.d("CustomerRepo", "Fixed orphan customer: $name")
             }
         } catch (e: Exception) {
