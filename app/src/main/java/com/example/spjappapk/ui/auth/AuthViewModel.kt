@@ -28,6 +28,7 @@ data class SalesPerson(
     val email: String? = null,
     @SerialName("target_omset") val targetOmset: Double? = 0.0,
     val role: String? = null,
+    val password: String? = null,
     @SerialName("is_active") val isActive: Boolean = true,
     @SerialName("resign_date") val resignDate: String? = null,
     @SerialName("resign_reason") val resignReason: String? = null
@@ -36,6 +37,8 @@ data class SalesPerson(
 class AuthViewModel(private val sessionManager: SessionManager) : ViewModel() {
     private val _user = MutableStateFlow<SalesPerson?>(null)
     val user = _user.asStateFlow()
+
+    private var _pendingPasswordChangeUser: SalesPerson? = null
 
     private val _isInitialLoading = MutableStateFlow(true)
     val isInitialLoading = _isInitialLoading.asStateFlow()
@@ -117,23 +120,34 @@ class AuthViewModel(private val sessionManager: SessionManager) : ViewModel() {
             _isLoading.value = true
             _error.value = null
             try {
-                val passwordMd5 = md5(passwordRaw)
+                val cleanName = name.trim()
+                val cleanPass = passwordRaw.trim()
+                val passwordMd5 = md5(cleanPass)
                 
-                // Verifikasi langsung ke tabel sales_persons menggunakan NAMA dan mendukung MD5/Plain
+                // Tarik berdasarkan nama, lalu verifikasi password (mendukung plain, MD5, atau null default '123')
                 val response = SupabaseClient.client.postgrest["sales_persons"]
                     .select {
                         filter {
-                            eq("name", name)
-                            or {
-                                eq("password", passwordRaw)
-                                eq("password", passwordMd5)
-                            }
+                            ilike("name", cleanName)
                         }
                     }
                 
                 val data = json.parseToJsonElement(response.data).jsonArray
                 if (data.isNotEmpty()) {
                     val userObj = json.decodeFromJsonElement<SalesPerson>(data[0].jsonObject)
+                    val storedPass = userObj.password?.trim() ?: ""
+
+                    val isPasswordValid = if (storedPass.isEmpty()) {
+                        cleanPass == "123" || cleanPass.equals("ganti123", ignoreCase = true)
+                    } else {
+                        storedPass.equals(cleanPass, ignoreCase = true) ||
+                        storedPass.equals(passwordMd5, ignoreCase = true)
+                    }
+
+                    if (!isPasswordValid) {
+                        _error.value = "Login Gagal: Nama atau Password salah."
+                        return@launch
+                    }
                     
                     // Cek status keaktifan akun (Is Active Check)
                     if (!userObj.isActive) {
@@ -150,12 +164,20 @@ class AuthViewModel(private val sessionManager: SessionManager) : ViewModel() {
                         return@launch
                     }
 
-                    // Simpan ke session manager agar "Stay Logged In"
-                    sessionManager.saveSession(userObj)
-                    
-                    // Cek jika password masih default
-                    if (passwordRaw == "ganti123") {
+                    // Cek jika password masih default ('123' atau 'ganti123' atau kosong)
+                    val isDefaultPass = cleanPass == "123" ||
+                        cleanPass.equals("ganti123", ignoreCase = true) ||
+                        storedPass.isEmpty() ||
+                        storedPass == "123" ||
+                        storedPass.equals(md5("123"), ignoreCase = true)
+
+                    if (isDefaultPass) {
+                        _pendingPasswordChangeUser = userObj
                         _needsPasswordChange.value = true
+                    } else {
+                        // Simpan ke session manager agar "Stay Logged In"
+                        _user.value = userObj
+                        sessionManager.saveSession(userObj)
                     }
                 } else {
                     _error.value = "Login Gagal: Nama atau Password salah."
@@ -171,23 +193,43 @@ class AuthViewModel(private val sessionManager: SessionManager) : ViewModel() {
 
     fun changePassword(newPassword: String) {
         viewModelScope.launch {
-            val currentUser = _user.value ?: return@launch
+            val targetUser = _pendingPasswordChangeUser ?: _user.value ?: return@launch
+            val cleanNew = newPassword.trim()
+            if (cleanNew.length < 4) {
+                _error.value = "Password baru minimal terdiri dari 4 karakter."
+                return@launch
+            }
+            if (cleanNew.equals("123", ignoreCase = true) || cleanNew.equals("ganti123", ignoreCase = true)) {
+                _error.value = "Password baru tidak boleh menggunakan password bawaan ('123')."
+                return@launch
+            }
+
             _isLoading.value = true
+            _error.value = null
             try {
                 SupabaseClient.client.postgrest["sales_persons"].update(
-                    mapOf("password" to newPassword)
+                    mapOf("password" to cleanNew)
                 ) {
-                    filter { eq("id", currentUser.id) }
+                    filter { eq("id", targetUser.id) }
                 }
                 
+                val updatedUser = targetUser.copy(password = cleanNew)
+                _pendingPasswordChangeUser = null
                 _needsPasswordChange.value = false
-                _error.value = "Password berhasil diubah!"
+                _user.value = updatedUser
+                sessionManager.saveSession(updatedUser)
             } catch (e: Exception) {
                 _error.value = "Gagal ubah password: ${e.message}"
             } finally {
                 _isLoading.value = false
             }
         }
+    }
+
+    fun cancelPasswordChange() {
+        _pendingPasswordChangeUser = null
+        _needsPasswordChange.value = false
+        _error.value = null
     }
 
     fun clearError() {

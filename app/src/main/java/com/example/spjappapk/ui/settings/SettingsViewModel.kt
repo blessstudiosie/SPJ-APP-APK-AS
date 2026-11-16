@@ -175,4 +175,73 @@ class SettingsViewModel(
             _isSyncing.value = false
         }
     }
+
+    private fun md5(input: String): String {
+        val md = java.security.MessageDigest.getInstance("MD5")
+        return java.math.BigInteger(1, md.digest(input.toByteArray())).toString(16).padStart(32, '0')
+    }
+
+    fun changeMyPassword(
+        oldPasswordRaw: String,
+        newPasswordRaw: String,
+        onResult: (Boolean, String) -> Unit
+    ) {
+        val user = currentUser
+        if (user == null) {
+            onResult(false, "Sesi pengguna tidak ditemukan.")
+            return
+        }
+
+        val cleanOld = oldPasswordRaw.trim()
+        val cleanNew = newPasswordRaw.trim()
+
+        if (cleanOld.isEmpty()) {
+            onResult(false, "Password lama wajib diisi.")
+            return
+        }
+        if (cleanNew.length < 4) {
+            onResult(false, "Password baru minimal terdiri dari 4 karakter.")
+            return
+        }
+        if (cleanNew.equals("123", ignoreCase = true) || cleanNew.equals("ganti123", ignoreCase = true)) {
+            onResult(false, "Password baru tidak boleh menggunakan password bawaan ('123').")
+            return
+        }
+
+        viewModelScope.launch {
+            _isSyncing.value = true
+            try {
+                val resp = SupabaseClient.client.postgrest["sales_persons"]
+                    .select { filter { eq("id", user.id) } }
+                val list = json.decodeFromString<List<SalesPerson>>(resp.data)
+                val remoteUser = list.firstOrNull()
+                val storedPass = remoteUser?.password?.trim() ?: user.password?.trim() ?: ""
+
+                val isOldValid = if (storedPass.isEmpty()) {
+                    cleanOld == "123"
+                } else {
+                    storedPass.equals(cleanOld, ignoreCase = true) ||
+                    storedPass.equals(md5(cleanOld), ignoreCase = true)
+                }
+
+                if (!isOldValid) {
+                    onResult(false, "Password lama yang Anda masukkan salah.")
+                    return@launch
+                }
+
+                SupabaseClient.client.postgrest["sales_persons"].update(
+                    mapOf("password" to cleanNew)
+                ) {
+                    filter { eq("id", user.id) }
+                }
+
+                _syncStatus.value = "Password berhasil diperbarui!"
+                onResult(true, "Password Anda berhasil diperbarui.")
+            } catch (e: Exception) {
+                onResult(false, "Gagal mengubah password: ${e.localizedMessage ?: "Periksa koneksi internet Anda"}")
+            } finally {
+                _isSyncing.value = false
+            }
+        }
+    }
 }

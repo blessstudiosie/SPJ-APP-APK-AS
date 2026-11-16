@@ -65,7 +65,8 @@ fun LoginScreen(
                 ChangePasswordForm(
                     isLoading = isLoading,
                     error = error,
-                    onConfirm = { authViewModel.changePassword(it) }
+                    onConfirm = { authViewModel.changePassword(it) },
+                    onCancel = { authViewModel.cancelPasswordChange() }
                 )
             } else {
                 LoginForm(
@@ -182,43 +183,57 @@ fun LoginForm(
 fun ChangePasswordForm(
     isLoading: Boolean,
     error: String?,
-    onConfirm: (String) -> Unit
+    onConfirm: (String) -> Unit,
+    onCancel: () -> Unit = {}
 ) {
     var newPassword by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
-    val focusManager = LocalFocusManager.current
+    var localValidationError by remember { mutableStateOf<String?>(null) }
 
     Text(
-        text = "Ganti Password",
+        text = "Wajib Ganti Password",
         style = MaterialTheme.typography.headlineMedium,
         color = MaterialTheme.colorScheme.primary
     )
     Text(
-        text = "Password Anda masih default. Harap ganti untuk keamanan.",
+        text = "Password Anda masih default ('123'). Silakan buat password baru (minimal 4 karakter) sebelum masuk ke aplikasi.",
         style = MaterialTheme.typography.bodyMedium,
         modifier = Modifier.padding(bottom = 16.dp)
     )
 
-    if (error != null) {
-        Text(text = error, color = MaterialTheme.colorScheme.error)
+    val displayError = localValidationError ?: error
+    if (displayError != null) {
+        Text(
+            text = displayError,
+            color = MaterialTheme.colorScheme.error,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
     }
 
     OutlinedTextField(
         value = newPassword,
-        onValueChange = { newPassword = it },
-        label = { Text("Password Baru") },
+        onValueChange = {
+            newPassword = it
+            localValidationError = null
+        },
+        label = { Text("Password Baru (Min. 4 Karakter)") },
         visualTransformation = PasswordVisualTransformation(),
         modifier = Modifier.fillMaxWidth(),
-        enabled = !isLoading
+        enabled = !isLoading,
+        singleLine = true
     )
     Spacer(modifier = Modifier.height(8.dp))
     OutlinedTextField(
         value = confirmPassword,
-        onValueChange = { confirmPassword = it },
-        label = { Text("Konfirmasi Password") },
+        onValueChange = {
+            confirmPassword = it
+            localValidationError = null
+        },
+        label = { Text("Konfirmasi Password Baru") },
         visualTransformation = PasswordVisualTransformation(),
         modifier = Modifier.fillMaxWidth(),
-        enabled = !isLoading
+        enabled = !isLoading,
+        singleLine = true
     )
     Spacer(modifier = Modifier.height(24.dp))
 
@@ -227,14 +242,27 @@ fun ChangePasswordForm(
     } else {
         Button(
             onClick = {
-                if (newPassword == confirmPassword && newPassword.length >= 6) {
-                    onConfirm(newPassword)
+                val cleanNew = newPassword.trim()
+                val cleanConfirm = confirmPassword.trim()
+                when {
+                    cleanNew.length < 4 -> localValidationError = "Password baru minimal terdiri dari 4 karakter."
+                    cleanNew.equals("123", ignoreCase = true) || cleanNew.equals("ganti123", ignoreCase = true) ->
+                        localValidationError = "Password baru tidak boleh menggunakan password bawaan ('123')."
+                    cleanNew != cleanConfirm -> localValidationError = "Konfirmasi password baru tidak cocok."
+                    else -> onConfirm(cleanNew)
                 }
             },
-            enabled = newPassword == confirmPassword && newPassword.isNotEmpty(),
+            enabled = newPassword.isNotBlank() && confirmPassword.isNotBlank(),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("Simpan Password")
+            Text("Simpan Password & Masuk")
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        TextButton(
+            onClick = onCancel,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Batal / Kembali ke Login")
         }
     }
 }

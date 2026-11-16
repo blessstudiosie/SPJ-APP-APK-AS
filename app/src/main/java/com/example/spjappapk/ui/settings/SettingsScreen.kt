@@ -13,11 +13,13 @@ import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.spjappapk.SPJApplication
@@ -47,6 +49,98 @@ fun SettingsScreen(
     val isSyncing by viewModel.isSyncing.collectAsState()
     val syncStatus by viewModel.syncStatus.collectAsState()
     val appUpdate by viewModel.appUpdate.collectAsState()
+    var showChangePasswordDialog by remember { mutableStateOf(false) }
+
+    if (showChangePasswordDialog) {
+        var oldPass by remember { mutableStateOf("") }
+        var newPass by remember { mutableStateOf("") }
+        var confirmPass by remember { mutableStateOf("") }
+        var dialogError by remember { mutableStateOf<String?>(null) }
+
+        AlertDialog(
+            onDismissRequest = { if (!isSyncing) showChangePasswordDialog = false },
+            title = { Text("Ubah Password Saya") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Akun: ${currentUser?.name ?: "-"}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (dialogError != null) {
+                        Text(
+                            text = dialogError!!,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                    OutlinedTextField(
+                        value = oldPass,
+                        onValueChange = { oldPass = it; dialogError = null },
+                        label = { Text("Password Lama") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                        enabled = !isSyncing,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = newPass,
+                        onValueChange = { newPass = it; dialogError = null },
+                        label = { Text("Password Baru (Min. 4 Karakter)") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                        enabled = !isSyncing,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = confirmPass,
+                        onValueChange = { confirmPass = it; dialogError = null },
+                        label = { Text("Konfirmasi Password Baru") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                        enabled = !isSyncing,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val cleanNew = newPass.trim()
+                        val cleanConfirm = confirmPass.trim()
+                        when {
+                            oldPass.isBlank() -> dialogError = "Password lama wajib diisi."
+                            cleanNew.length < 4 -> dialogError = "Password baru minimal terdiri dari 4 karakter."
+                            cleanNew.equals("123", ignoreCase = true) || cleanNew.equals("ganti123", ignoreCase = true) ->
+                                dialogError = "Password baru tidak boleh menggunakan password bawaan ('123')."
+                            cleanNew != cleanConfirm -> dialogError = "Konfirmasi password baru tidak cocok."
+                            else -> {
+                                viewModel.changeMyPassword(oldPass, cleanNew) { success, message ->
+                                    if (success) {
+                                        android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
+                                        showChangePasswordDialog = false
+                                    } else {
+                                        dialogError = message
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    enabled = !isSyncing
+                ) {
+                    Text(if (isSyncing) "Menyimpan..." else "Simpan")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showChangePasswordDialog = false },
+                    enabled = !isSyncing
+                ) {
+                    Text("Batal")
+                }
+            }
+        )
+    }
 
     val createDocumentLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/json")
@@ -113,6 +207,38 @@ fun SettingsScreen(
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
         ) {
+            // Card 0: Keamanan Akun (Ubah Password)
+            Card(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row {
+                        Icon(Icons.Default.Lock, null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Keamanan Akun", style = MaterialTheme.typography.titleMedium)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Perbarui kata sandi (password) akun Anda secara berkala untuk menjaga keamanan akses.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(16.dp))
+
+                    Button(
+                        onClick = { showChangePasswordDialog = true },
+                        enabled = !isSyncing,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Lock, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Ubah Password Saya")
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+
             // Card 1: Backup & Restore
             Card(
                 modifier = Modifier.fillMaxWidth()
