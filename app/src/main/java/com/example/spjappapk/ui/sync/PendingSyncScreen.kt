@@ -35,21 +35,32 @@ fun PendingSyncScreen(viewModel: PendingSyncViewModel) {
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            if (uiState.pendingOrders.isEmpty() && uiState.pendingVisits.isEmpty()) {
+            if (uiState.totalPendingCount == 0) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("Semua data sudah tersinkronisasi.")
+                    Text("✅ Semua data offline sudah tersinkronisasi ke server.")
                 }
             } else {
+                Button(
+                    onClick = { viewModel.forceSync() },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 10.dp)
+                ) {
+                    Icon(Icons.Default.Sync, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("🔄 Kirim Semua ke Server Sekarang (${uiState.totalPendingCount} Item)")
+                }
+
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
                     if (uiState.pendingOrders.isNotEmpty()) {
                         item {
-                            ListHeader("Pesanan Belum Terkirim (${uiState.pendingOrders.size})")
+                            ListHeader("Pesanan SO Belum Terkirim (${uiState.pendingOrders.size})")
                         }
                         items(uiState.pendingOrders) { order ->
                             ListItem(
                                 headlineContent = { Text(order.customerName.ifEmpty { "Customer ID: ${order.customerId}" }) },
-                                supportingContent = { Text("Pesanan Tanggal: ${order.orderDate}") },
-                                trailingContent = { Badge { Text("Pending") } }
+                                supportingContent = { Text("Tanggal: ${order.orderDate} | Total: ${com.example.spjappapk.util.CurrencyUtil.formatRupiah(order.totalAmount)}") },
+                                trailingContent = { Badge { Text("SO Pending") } }
                             )
                             HorizontalDivider()
                         }
@@ -57,12 +68,40 @@ fun PendingSyncScreen(viewModel: PendingSyncViewModel) {
 
                     if (uiState.pendingVisits.isNotEmpty()) {
                         item {
-                            ListHeader("Kunjungan Belum Terkirim (${uiState.pendingVisits.size})")
+                            ListHeader("Laporan Kunjungan Belum Terkirim (${uiState.pendingVisits.size})")
                         }
                         items(uiState.pendingVisits) { visit ->
                             ListItem(
                                 headlineContent = { Text(visit.customerName.ifEmpty { "Kunjungan ID: ${visit.customerId}" }) },
                                 supportingContent = { Text("Lat: ${visit.locationLat}, Lng: ${visit.locationLng}") },
+                                trailingContent = { Badge { Text("Pending") } }
+                            )
+                            HorizontalDivider()
+                        }
+                    }
+
+                    if (uiState.pendingCustomers.isNotEmpty()) {
+                        item {
+                            ListHeader("Data Konsumen Baru/Edit Belum Terkirim (${uiState.pendingCustomers.size})")
+                        }
+                        items(uiState.pendingCustomers) { customer ->
+                            ListItem(
+                                headlineContent = { Text(customer.name) },
+                                supportingContent = { Text("${customer.address ?: "-"} (${customer.deliveryRoute ?: "LOBAR-MATARAM"})") },
+                                trailingContent = { Badge { Text("Pending") } }
+                            )
+                            HorizontalDivider()
+                        }
+                    }
+
+                    if (uiState.pendingPayments.isNotEmpty()) {
+                        item {
+                            ListHeader("Input Pembayaran Belum Terkirim (${uiState.pendingPayments.size})")
+                        }
+                        items(uiState.pendingPayments) { payment ->
+                            ListItem(
+                                headlineContent = { Text("Pembayaran Nota: ${payment.saleId}") },
+                                supportingContent = { Text("${payment.paymentMethod} - ${com.example.spjappapk.util.CurrencyUtil.formatRupiah(payment.amount)}") },
                                 trailingContent = { Badge { Text("Pending") } }
                             )
                             HorizontalDivider()

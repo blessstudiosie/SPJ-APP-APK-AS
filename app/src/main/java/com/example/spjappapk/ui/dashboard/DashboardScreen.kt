@@ -40,7 +40,8 @@ fun DashboardScreen(
     onNavigateToTeamDetail: () -> Unit = {},
     onNavigateToBillingDetail: () -> Unit = {},
     onNavigateToPendingOmzet: () -> Unit = {},
-    onNavigateToTodayVisits: () -> Unit = {}
+    onNavigateToTodayVisits: () -> Unit = {},
+    onNavigateToPendingSync: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
@@ -270,6 +271,57 @@ fun DashboardScreen(
                             TextButton(onClick = onNavigateToSyncLog) {
                                 Text("Detail", color = MaterialTheme.colorScheme.primary)
                             }
+                        }
+                    }
+                }
+
+                // Offline / Pending Queue Banner
+                if (uiState.isOfflineMode || uiState.unsyncedCount > 0) {
+                    Card(
+                        onClick = onNavigateToPendingSync,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 14.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (uiState.isOfflineMode) Color(0xFFFEF3C7) else Color(0xFFDBEAFE)
+                        ),
+                        border = BorderStroke(1.dp, if (uiState.isOfflineMode) Color(0xFFF59E0B) else Color(0xFF3B82F6)),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = if (uiState.isOfflineMode) Icons.Default.CloudOff else Icons.Default.CloudUpload,
+                                contentDescription = null,
+                                tint = if (uiState.isOfflineMode) Color(0xFFB45309) else Color(0xFF1D4ED8)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = if (uiState.isOfflineMode) "📴 Mode Offline Aktif" else "⏳ Ada ${uiState.unsyncedCount} Data Belum Sync",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (uiState.isOfflineMode) Color(0xFF92400E) else Color(0xFF1E3A8A)
+                                )
+                                Text(
+                                    text = if (uiState.isOfflineMode) {
+                                        "Input Order SO, Kunjungan & Konsumen tetap tersimpan di HP (${uiState.unsyncedCount} antrean). Otomatis dikirim saat ada sinyal."
+                                    } else {
+                                        "Ketuk untuk melihat rincian Antrean Sync atau mengirim ke server sekarang."
+                                    },
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (uiState.isOfflineMode) Color(0xFFB45309) else Color(0xFF1D4ED8)
+                                )
+                            }
+                            Icon(
+                                imageVector = Icons.Default.ChevronRight,
+                                contentDescription = null,
+                                tint = if (uiState.isOfflineMode) Color(0xFFB45309) else Color(0xFF1D4ED8)
+                            )
                         }
                     }
                 }

@@ -1,9 +1,16 @@
 package com.example.spjappapk.data.repository
 
+import android.content.Context
+import androidx.work.Constraints
+import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
 import com.example.spjappapk.data.local.dao.PaymentDao
 import com.example.spjappapk.data.local.dao.SalesMasterDao
 import com.example.spjappapk.data.local.entities.PaymentEntity
 import com.example.spjappapk.data.remote.SupabaseClient
+import com.example.spjappapk.data.sync.SyncWorker
 import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -12,7 +19,8 @@ import kotlinx.serialization.json.Json
 
 class PaymentRepository(
     private val paymentDao: PaymentDao,
-    private val salesMasterDao: SalesMasterDao
+    private val salesMasterDao: SalesMasterDao,
+    private val context: Context? = null
 ) {
     val allPayments: Flow<List<PaymentEntity>> = paymentDao.getAllPayments()
 
@@ -73,6 +81,27 @@ class PaymentRepository(
             isSynced = false
         )
         paymentDao.insertPayment(newPayment)
+        try {
+            syncUnsyncedPayments()
+        } catch (e: Exception) {
+            // Offline fallback: will be synced by WorkManager
+        }
+        scheduleSync()
+    }
+
+    fun scheduleSync() {
+        val ctx = context ?: return
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+        val syncRequest = OneTimeWorkRequestBuilder<SyncWorker>()
+            .setConstraints(constraints)
+            .build()
+        WorkManager.getInstance(ctx).enqueueUniqueWork(
+            "SyncWork",
+            ExistingWorkPolicy.REPLACE,
+            syncRequest
+        )
     }
 
     suspend fun syncUnsyncedPayments() = withContext(Dispatchers.IO) {

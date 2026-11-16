@@ -67,7 +67,7 @@ class SPJApplication : Application() {
     }
 
     val customerRepository: CustomerRepository by lazy {
-        CustomerRepository(database.customerDao(), database.syncLogDao(), SupabaseClient.client)
+        CustomerRepository(database.customerDao(), database.syncLogDao(), SupabaseClient.client, this)
     }
     
     val salesRepository: SalesRepository by lazy { 
@@ -83,7 +83,7 @@ class SPJApplication : Application() {
     }
 
     val paymentRepository: com.example.spjappapk.data.repository.PaymentRepository by lazy {
-        com.example.spjappapk.data.repository.PaymentRepository(database.paymentDao(), database.salesMasterDao())
+        com.example.spjappapk.data.repository.PaymentRepository(database.paymentDao(), database.salesMasterDao(), this)
     }
 
     val backupRepository: com.example.spjappapk.data.repository.BackupRepository by lazy {

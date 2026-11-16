@@ -120,6 +120,16 @@ fun HomeScreen(
                 
                 val currentRoute = backStack.last()
                 val unreadCount by app.database.notificationDao().getUnreadCount().collectAsState(initial = 0)
+                val allOrdersForBadge by app.salesRepository.allSales.collectAsState(initial = emptyList())
+                val allVisitsForBadge by app.visitRepository.allVisits.collectAsState(initial = emptyList())
+                val allCustomersForBadge by app.customerRepository.allCustomers.collectAsState(initial = emptyList())
+                val allPaymentsForBadge by app.paymentRepository.allPayments.collectAsState(initial = emptyList())
+                val totalUnsyncedBadgeCount = remember(allOrdersForBadge, allVisitsForBadge, allCustomersForBadge, allPaymentsForBadge) {
+                    allOrdersForBadge.count { it.remoteId == null && (it.status == "PENDING" || it.status == "SO") } +
+                    allVisitsForBadge.count { it.syncStatus == "PENDING" } +
+                    allCustomersForBadge.count { it.syncStatus == "PENDING" } +
+                    allPaymentsForBadge.count { !it.isSynced }
+                }
                 
                 NavigationDrawerItem(
                     label = { Text("Dashboard") },
@@ -213,7 +223,14 @@ fun HomeScreen(
                     modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
                 )
                 NavigationDrawerItem(
-                    label = { Text("Antrean Sync") },
+                    label = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Antrean Sync", modifier = Modifier.weight(1f))
+                            if (totalUnsyncedBadgeCount > 0) {
+                                Badge { Text("$totalUnsyncedBadgeCount") }
+                            }
+                        }
+                    },
                     selected = currentRoute == Route.PendingSync,
                     onClick = { 
                         scope.launch { drawerState.close() }
@@ -314,6 +331,16 @@ fun HomeScreen(
                     title = {
                         val currentRoute = backStack.last()
                 val unreadCount by app.database.notificationDao().getUnreadCount().collectAsState(initial = 0)
+                val allOrdersForBadge by app.salesRepository.allSales.collectAsState(initial = emptyList())
+                val allVisitsForBadge by app.visitRepository.allVisits.collectAsState(initial = emptyList())
+                val allCustomersForBadge by app.customerRepository.allCustomers.collectAsState(initial = emptyList())
+                val allPaymentsForBadge by app.paymentRepository.allPayments.collectAsState(initial = emptyList())
+                val totalUnsyncedBadgeCount = remember(allOrdersForBadge, allVisitsForBadge, allCustomersForBadge, allPaymentsForBadge) {
+                    allOrdersForBadge.count { it.remoteId == null && (it.status == "PENDING" || it.status == "SO") } +
+                    allVisitsForBadge.count { it.syncStatus == "PENDING" } +
+                    allCustomersForBadge.count { it.syncStatus == "PENDING" } +
+                    allPaymentsForBadge.count { !it.isSynced }
+                }
                         Text(when(currentRoute) {
                             is Route.Dashboard -> "Dashboard"
                             is Route.TodayVisitsDetail -> "Rincian Kunjungan"
@@ -388,6 +415,10 @@ fun HomeScreen(
                             },
                             onNavigateToTodayVisits = {
                                 backStack.add(Route.TodayVisitsDetail)
+                            },
+                            onNavigateToPendingSync = {
+                                backStack.clear()
+                                backStack.add(Route.PendingSync)
                             }
                         )
                     }
@@ -483,7 +514,12 @@ fun HomeScreen(
                     }
                     is Route.PendingSync -> NavEntry(r) {
                         val viewModel: PendingSyncViewModel = viewModel {
-                            PendingSyncViewModel(app.salesRepository, app.visitRepository)
+                            PendingSyncViewModel(
+                                app.salesRepository,
+                                app.visitRepository,
+                                app.customerRepository,
+                                app.paymentRepository
+                            )
                         }
                         PendingSyncScreen(viewModel)
                     }

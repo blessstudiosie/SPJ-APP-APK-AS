@@ -146,32 +146,6 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                 }
             }
 
-            // 2. PULL: Refresh Master Data
-            try {
-                android.util.Log.d("SyncWorker", "Refreshing master data...")
-                app.inventoryRepository.refreshInventory()
-                app.customerRepository.refreshCustomers()
-                app.salesRepository.refreshSalesPersons()
-                
-                // Pull sales master, visits and notifications if user is logged in
-                val currentUser = app.sessionManager.userFlow.firstOrNull()
-                if (currentUser != null) {
-                    val isManagerOrOwner = currentUser.role?.lowercase() == "manager" || currentUser.role?.lowercase() == "owner"
-                    app.salesRepository.refreshSalesMaster(
-                        currentUser.id,
-                        isManagerOrOwner
-                    )
-                    app.visitRepository.refreshVisits(currentUser.id)
-                    app.notificationRepository.refreshNotifications(currentUser.id)
-                    app.paymentRepository.refreshPayments()
-                }
-                
-                android.util.Log.d("SyncWorker", "Master data refresh called")
-            } catch (e: Exception) {
-                logSync("General", "ERROR", "PULL Master Data failed: ${e.message}")
-                e.printStackTrace()
-            }
-
             // 2. PUSH: Sync Visits to check_in_logs
             val unsyncedVisits = visitDao.getUnsyncedVisits()
             if (unsyncedVisits.isNotEmpty()) {
@@ -433,7 +407,32 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                 }
             }
 
-            // 6. PULL: Check for Admin Feedback for Sales Orders
+            // 6. PULL: Refresh Master Data AFTER all local offline changes have been pushed
+            try {
+                android.util.Log.d("SyncWorker", "Refreshing master data after push...")
+                app.inventoryRepository.refreshInventory()
+                app.customerRepository.refreshCustomers()
+                app.salesRepository.refreshSalesPersons()
+                
+                val currentUser = app.sessionManager.userFlow.firstOrNull()
+                if (currentUser != null) {
+                    val isManagerOrOwner = currentUser.role?.lowercase() in listOf("manager", "owner", "admin")
+                    app.salesRepository.refreshSalesMaster(
+                        currentUser.id,
+                        isManagerOrOwner
+                    )
+                    app.visitRepository.refreshVisits(currentUser.id)
+                    app.notificationRepository.refreshNotifications(currentUser.id)
+                    app.paymentRepository.refreshPayments()
+                }
+                
+                android.util.Log.d("SyncWorker", "Master data refresh completed")
+            } catch (e: Exception) {
+                logSync("General", "ERROR", "PULL Master Data failed: ${e.message}")
+                e.printStackTrace()
+            }
+
+            // 7. PULL: Check for Admin Feedback for Sales Orders
             val ordersToCheck = salesOrderDao.getOrdersAwaitingFeedback()
             if (ordersToCheck.isNotEmpty()) {
                 val remoteIds = ordersToCheck.mapNotNull { it.remoteId }

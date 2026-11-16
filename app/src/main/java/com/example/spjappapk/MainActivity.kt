@@ -32,7 +32,7 @@ class MainActivity : ComponentActivity() {
             SPJAPPAPKTheme {
                 val app = application as SPJApplication
                 val authViewModel: AuthViewModel = viewModel {
-                    AuthViewModel(app.sessionManager)
+                    AuthViewModel(app.sessionManager, app.database.salesPersonDao())
                 }
                 MainApp(authViewModel)
             }

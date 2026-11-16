@@ -1,9 +1,16 @@
 package com.example.spjappapk.data.repository
 
+import android.content.Context
+import androidx.work.Constraints
+import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
 import com.example.spjappapk.data.local.dao.CustomerDao
 import com.example.spjappapk.data.local.dao.SyncLogDao
 import com.example.spjappapk.data.local.entities.Customer
 import com.example.spjappapk.data.local.entities.SyncLog
+import com.example.spjappapk.data.sync.SyncWorker
 import com.example.spjappapk.util.retryNetworkCall
 import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.coroutines.Dispatchers
@@ -16,7 +23,8 @@ import kotlinx.serialization.json.put
 class CustomerRepository(
     private val customerDao: CustomerDao,
     private val syncLogDao: SyncLogDao,
-    private val supabaseClient: io.github.jan.supabase.SupabaseClient
+    private val supabaseClient: io.github.jan.supabase.SupabaseClient,
+    private val context: Context? = null
 ) {
     val allCustomers: Flow<List<Customer>> = customerDao.getAllCustomers()
 
@@ -96,6 +104,7 @@ class CustomerRepository(
         } catch (e: Exception) {
             val errorMsg = e.localizedMessage ?: "Offline"
             syncLogDao.insert(SyncLog(event = "Customers", status = "INFO", message = "Pelanggan disimpan lokal, akan disinkronkan saat online ($errorMsg)"))
+            scheduleSync()
         }
     }
 
@@ -117,7 +126,23 @@ class CustomerRepository(
             syncLogDao.insert(SyncLog(event = "Customers", status = "SUCCESS", message = "Koordinat outlet berhasil di-lock ke ($lat, $lng)"))
         } catch (e: Exception) {
             syncLogDao.insert(SyncLog(event = "Customers", status = "INFO", message = "Koordinat outlet diperbarui secara lokal (Akan sinkron saat online)"))
+            scheduleSync()
         }
+    }
+
+    fun scheduleSync() {
+        val ctx = context ?: return
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+        val syncRequest = OneTimeWorkRequestBuilder<SyncWorker>()
+            .setConstraints(constraints)
+            .build()
+        WorkManager.getInstance(ctx).enqueueUniqueWork(
+            "SyncWork",
+            ExistingWorkPolicy.REPLACE,
+            syncRequest
+        )
     }
 
     suspend fun checkAndFixOrphanCustomer(remoteId: String, name: String, salesId: String?, salesName: String?) = withContext(Dispatchers.IO) {

@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -34,7 +35,10 @@ data class SalesPerson(
     @SerialName("resign_reason") val resignReason: String? = null
 )
 
-class AuthViewModel(private val sessionManager: SessionManager) : ViewModel() {
+class AuthViewModel(
+    private val sessionManager: SessionManager,
+    private val salesPersonDao: com.example.spjappapk.data.local.dao.SalesPersonDao? = null
+) : ViewModel() {
     private val _user = MutableStateFlow<SalesPerson?>(null)
     val user = _user.asStateFlow()
 
@@ -184,7 +188,64 @@ class AuthViewModel(private val sessionManager: SessionManager) : ViewModel() {
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
-                _error.value = "Koneksi Gagal: ${e.message ?: "Terjadi kesalahan"}"
+                // Fallback Offline Login menggunakan data lokal Room (sales_persons_profile)
+                val cleanName = name.trim()
+                val cleanPass = passwordRaw.trim()
+                val passwordMd5 = md5(cleanPass)
+                val localList = try {
+                    salesPersonDao?.getAllSalesPersons()?.firstOrNull() ?: emptyList()
+                } catch (dbEx: Exception) {
+                    emptyList()
+                }
+                val localMatch = localList.find { it.name.trim().equals(cleanName, ignoreCase = true) }
+                if (localMatch != null) {
+                    val storedPass = localMatch.password?.trim() ?: ""
+                    val isPasswordValid = if (storedPass.isEmpty()) {
+                        cleanPass == "123" || cleanPass.equals("ganti123", ignoreCase = true)
+                    } else {
+                        storedPass.equals(cleanPass, ignoreCase = true) ||
+                        storedPass.equals(passwordMd5, ignoreCase = true)
+                    }
+
+                    if (!isPasswordValid) {
+                        _error.value = "Login Offline Gagal: Nama atau Password salah."
+                        return@launch
+                    }
+
+                    val empStatus = localMatch.employmentStatus?.trim()?.uppercase() ?: "AKTIF"
+                    if (!localMatch.isActive || empStatus == "RESIGN" || empStatus == "NONAKTIF") {
+                        _error.value = "Akun Anda telah dinonaktifkan / resign. Silakan hubungi Admin kantor CV. Sarana Prima Jaya."
+                        return@launch
+                    }
+
+                    val isDefaultPass = cleanPass == "123" ||
+                        cleanPass.equals("ganti123", ignoreCase = true) ||
+                        storedPass.isEmpty() ||
+                        storedPass == "123" ||
+                        storedPass.equals(md5("123"), ignoreCase = true)
+
+                    if (isDefaultPass) {
+                        _error.value = "Anda wajib terhubung ke internet pada login pertama untuk mengganti password bawaan ('123')."
+                        return@launch
+                    }
+
+                    val offlineUser = SalesPerson(
+                        id = localMatch.id,
+                        name = localMatch.name,
+                        phone = localMatch.phone,
+                        email = localMatch.email,
+                        targetOmset = localMatch.targetOmset,
+                        role = localMatch.role,
+                        password = localMatch.password,
+                        isActive = localMatch.isActive,
+                        resignDate = localMatch.resignDate,
+                        resignReason = localMatch.resignReason
+                    )
+                    _user.value = offlineUser
+                    sessionManager.saveSession(offlineUser)
+                } else {
+                    _error.value = "Koneksi Gagal (Offline): Data akun belum tersimpan di HP ini. Hubungkan ke internet untuk login pertama kali."
+                }
             } finally {
                 _isLoading.value = false
             }

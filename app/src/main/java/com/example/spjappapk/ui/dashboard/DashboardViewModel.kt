@@ -49,7 +49,9 @@ data class DashboardUiState(
     val userRole: String = "",
     val appUpdate: AppUpdate? = null,
     val teamBreakdown: List<com.example.spjappapk.data.local.dao.SalesPersonOmzet> = emptyList(),
-    val deliveryRouteBreakdown: List<DeliveryRouteSummary> = emptyList()
+    val deliveryRouteBreakdown: List<DeliveryRouteSummary> = emptyList(),
+    val unsyncedCount: Int = 0,
+    val isOfflineMode: Boolean = false
 )
 
 class DashboardViewModel(
@@ -72,6 +74,7 @@ class DashboardViewModel(
         visitRepository.allVisits,
         app.database.salesPersonDao().getAllSalesPersons(), // Untuk resolusi nama tim
         customerRepository.allCustomers,
+        app.paymentRepository.allPayments,
         _isSyncing,
         _syncStatus,
         _appUpdate
@@ -81,9 +84,10 @@ class DashboardViewModel(
         val visits = flows[2] as List<com.example.spjappapk.data.local.entities.Visit>
         val allStaff = flows[3] as List<com.example.spjappapk.data.local.entities.SalesPersonEntity>
         val allCustomers = flows[4] as List<com.example.spjappapk.data.local.entities.Customer>
-        val isSyncing = flows[5] as Boolean
-        val syncStatus = flows[6] as String
-        val appUpdate = flows[7] as AppUpdate?
+        val allPayments = flows[5] as List<com.example.spjappapk.data.local.entities.PaymentEntity>
+        val isSyncing = flows[6] as Boolean
+        val syncStatus = flows[7] as String
+        val appUpdate = flows[8] as AppUpdate?
 
         try {
             if (currentUser == null) return@combine DashboardUiState(isLoading = false, isSyncing = isSyncing, syncStatus = syncStatus)
@@ -215,6 +219,11 @@ class DashboardViewModel(
                 }
                 .sortedByDescending { it.totalNominal }
 
+            val totalUnsynced = salesQueue.count { it.remoteId == null && (it.status == "PENDING" || it.status == "SO") } +
+                visits.count { it.syncStatus == "PENDING" } +
+                allCustomers.count { it.syncStatus == "PENDING" } +
+                allPayments.count { !it.isSynced }
+
             DashboardUiState(
                 totalOrdersToday = todayOrders.size,
                 estimatedOmzetToday = omzetToday,
@@ -228,7 +237,9 @@ class DashboardViewModel(
                 userRole = currentUser.role ?: "",
                 appUpdate = appUpdate,
                 teamBreakdown = breakdown,
-                deliveryRouteBreakdown = routeBreakdown
+                deliveryRouteBreakdown = routeBreakdown,
+                unsyncedCount = totalUnsynced,
+                isOfflineMode = !isNetworkAvailable() || syncStatus.startsWith("📴")
             )
         } catch (e: Exception) {
             android.util.Log.e("DashboardVM", "UI Combine Error", e)
@@ -258,17 +269,36 @@ class DashboardViewModel(
         }
     }
 
+    private fun isNetworkAvailable(): Boolean {
+        return try {
+            val cm = app.getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+            val network = cm?.activeNetwork ?: return false
+            val capabilities = cm.getNetworkCapabilities(network) ?: return false
+            capabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        } catch (e: Exception) {
+            true
+        }
+    }
+
     fun sync() {
         salesRepository.scheduleSync()
         visitRepository.scheduleSync()
+        customerRepository.scheduleSync()
+        app.paymentRepository.scheduleSync()
     }
 
     fun manualSync() {
         viewModelScope.launch {
             if (_isSyncing.value) return@launch
+            if (!isNetworkAvailable()) {
+                sync()
+                _syncStatus.value = "📴 Mode Offline (Data Lokal Aktif)"
+                return@launch
+            }
             _isSyncing.value = true
             _syncStatus.value = "Menghubungkan ke server..."
             try {
+                sync()
                 inventoryRepository.refreshInventory()
                 customerRepository.refreshCustomers()
                 // Refresh master sales explicitly (Gunakan Full Sync untuk memastikan data tidak terpotong)
@@ -277,11 +307,10 @@ class DashboardViewModel(
                     val isManagerOrOwner = role in listOf("manager", "owner", "admin")
                     salesRepository.refreshSalesMaster(currentUser.id, isManagerOrOwner, isFullSync = true)
                 }
-                sync()
                 checkForUpdates()
                 _syncStatus.value = "Sinkronisasi selesai"
             } catch (e: Exception) {
-                _syncStatus.value = "Gagal Sinkron: ${e.localizedMessage}"
+                _syncStatus.value = "📴 Mode Offline / Sinyal Lemah (Data Lokal Aktif)"
             } finally {
                 _isSyncing.value = false
             }
