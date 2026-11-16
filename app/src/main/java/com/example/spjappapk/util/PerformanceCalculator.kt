@@ -120,13 +120,22 @@ object PerformanceCalculator {
                 cust.salesPersonName?.equals(staffName, ignoreCase = true) == true
             }
 
-            val target = staffTargets[staffId] ?: (if (staffId == currentUser?.id) currentUser.targetOmset ?: 0.0 else 0.0)
+            val staffEntity = salesPersonEntities.find { it.id.equals(staffId, ignoreCase = true) }
+            val isResignedOrInactive = staffEntity != null && (
+                !staffEntity.isActive ||
+                staffEntity.employmentStatus.equals("RESIGN", ignoreCase = true) ||
+                staffEntity.employmentStatus.equals("NONAKTIF", ignoreCase = true)
+            )
+            val rawTarget = staffTargets[staffId] ?: (if (staffId == currentUser?.id) currentUser.targetOmset ?: 0.0 else 0.0)
+            val target = if (isResignedOrInactive) 0.0 else rawTarget
+            val displayName = if (isResignedOrInactive) "$staffName (Resign)" else staffName
+            val hasActivity = staffTotalOmset > 0 || staffUnrealizedBreakdown.totalUnrealizedOmset > 0 || staffVisits.isNotEmpty()
 
-            if (staffTotalOmset > 0 || staffUnrealizedBreakdown.totalUnrealizedOmset > 0 || staffVisits.isNotEmpty() || target > 0) {
+            if (hasActivity || (!isResignedOrInactive && target > 0)) {
                 breakdown.add(
                     SalesPersonPerformance(
                         salesPersonId = staffId,
-                        salesPersonName = staffName,
+                        salesPersonName = displayName,
                         targetOmset = target,
                         totalOmset = staffTotalOmset,
                         omsetDone = staffDone,
