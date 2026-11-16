@@ -17,6 +17,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -40,6 +45,99 @@ fun DashboardScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     val isManagerOrOwner = uiState.userRole.lowercase() == "manager" || uiState.userRole.lowercase() == "owner"
+    var selectedRouteForDetail by remember { mutableStateOf<DeliveryRouteSummary?>(null) }
+
+    selectedRouteForDetail?.let { routeSummary ->
+        AlertDialog(
+            onDismissRequest = { selectedRouteForDetail = null },
+            title = {
+                Column {
+                    Text(
+                        text = "Jalur: ${routeSummary.routeName}",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "${routeSummary.orderCount} Nota (SO & ON PROSES) • ${formatCurrency(routeSummary.totalNominal)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF6D28D9)
+                    )
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 420.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (routeSummary.invoices.isEmpty()) {
+                        Text("Tidak ada nota pending pada jalur ini.", style = MaterialTheme.typography.bodyMedium)
+                    } else {
+                        routeSummary.invoices.forEach { inv ->
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FAFC)),
+                                border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = inv.customerName,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Badge(
+                                            containerColor = if (inv.status == "ON PROSES") Color(0xFFFEF3C7) else Color(0xFFDBEAFE),
+                                            contentColor = if (inv.status == "ON PROSES") Color(0xFFB45309) else Color(0xFF1D4ED8)
+                                        ) {
+                                            Text(inv.status, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(
+                                            text = "Nota: ${inv.nota} • ${inv.orderDateDisplay}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = Color(0xFF64748B)
+                                        )
+                                        Text(
+                                            text = "Sales: ${inv.salesPersonName}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = Color(0xFF475569),
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = formatCurrency(inv.total),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF0F172A)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { selectedRouteForDetail = null }) {
+                    Text("Tutup")
+                }
+            }
+        )
+    }
 
     // Update Dialog
     if (uiState.appUpdate != null) {
@@ -254,6 +352,111 @@ fun DashboardScreen(
                         }
                         Badge(containerColor = Color(0xFF0288D1)) {
                             Text("${uiState.monthlyMetrics.pendingCount} Nota", color = Color.White)
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Panel Nominal Nota Belum Dikirim per Jalur Pengiriman (Status: SO & ON PROSES) - Persis seperti Dashboard Desktop
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    border = BorderStroke(1.dp, Color(0xFF8B5CF6)),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Surface(
+                                color = Color(0xFFF5F3FF),
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text(
+                                    text = "🚚 JALUR PENGIRIMAN",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF6D28D9),
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Status: SO & ON PROSES",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color(0xFF64748B)
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "Nominal Nota Belum Dikirim per Jalur Pengiriman",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF0F172A)
+                        )
+                        Text(
+                            text = "Ketuk baris jalur untuk melihat daftar nota",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFF64748B)
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        if (uiState.deliveryRouteBreakdown.isEmpty()) {
+                            Surface(
+                                color = Color(0xFFF8FAFC),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = "✅ Semua Nota Telah Terkirim (0 Pending)",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Medium,
+                                    color = Color(0xFF475569),
+                                    modifier = Modifier.padding(12.dp)
+                                )
+                            }
+                        } else {
+                            uiState.deliveryRouteBreakdown.forEachIndexed { index, routeItem ->
+                                if (index > 0) {
+                                    HorizontalDivider(color = Color(0xFFF1F5F9))
+                                }
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { selectedRouteForDetail = routeItem }
+                                        .padding(vertical = 10.dp, horizontal = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = routeItem.displayName,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF0F172A)
+                                        )
+                                        Text(
+                                            text = "${routeItem.orderCount} Nota Belum Kirim",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = Color(0xFF64748B)
+                                        )
+                                    }
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = formatCurrency(routeItem.totalNominal),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF6D28D9)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Icon(
+                                            imageVector = Icons.Default.ChevronRight,
+                                            contentDescription = "Lihat Detail",
+                                            tint = Color(0xFF94A3B8),
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }

@@ -98,6 +98,28 @@ class SalesRepository(
             if (allData.isNotEmpty()) {
                 salesMasterDao.insertSalesMaster(allData)
             }
+
+            // Untuk akun non-manager (Sales), tarik juga seluruh nota berstatus SO & ON PROSES lintas tim
+            // agar tabel "Nominal Nota Belum Dikirim per Jalur Pengiriman" di Dashboard menampilkan total seluruh perusahaan per jalur
+            if (!isManager) {
+                try {
+                    val pendingBatch = retryNetworkCall(times = 2) {
+                        val resp = SupabaseClient.client.postgrest["sales"]
+                            .select {
+                                filter {
+                                    isIn("status", listOf("SO", "ON PROSES"))
+                                }
+                                range(0, 999)
+                            }
+                        Json { ignoreUnknownKeys = true }.decodeFromString<List<SalesMaster>>(resp.data)
+                    }
+                    if (pendingBatch.isNotEmpty()) {
+                        salesMasterDao.insertSalesMaster(pendingBatch)
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
         } catch (e: Exception) {
             e.printStackTrace()
         }

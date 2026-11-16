@@ -19,6 +19,23 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import java.util.*
 
+data class DeliveryRouteInvoiceItem(
+    val nota: String,
+    val orderDateDisplay: String,
+    val customerName: String,
+    val salesPersonName: String,
+    val status: String,
+    val total: Double
+)
+
+data class DeliveryRouteSummary(
+    val routeName: String,
+    val displayName: String,
+    val orderCount: Int,
+    val totalNominal: Double,
+    val invoices: List<DeliveryRouteInvoiceItem> = emptyList()
+)
+
 data class DashboardUiState(
     val totalOrdersToday: Int = 0,
     val estimatedOmzetToday: Double = 0.0,
@@ -31,7 +48,8 @@ data class DashboardUiState(
     val userName: String = "User",
     val userRole: String = "",
     val appUpdate: AppUpdate? = null,
-    val teamBreakdown: List<com.example.spjappapk.data.local.dao.SalesPersonOmzet> = emptyList()
+    val teamBreakdown: List<com.example.spjappapk.data.local.dao.SalesPersonOmzet> = emptyList(),
+    val deliveryRouteBreakdown: List<DeliveryRouteSummary> = emptyList()
 )
 
 class DashboardViewModel(
@@ -53,6 +71,7 @@ class DashboardViewModel(
         salesRepository.allSalesMaster, // Pantau perubahan data master (omset)
         visitRepository.allVisits,
         app.database.salesPersonDao().getAllSalesPersons(), // Untuk resolusi nama tim
+        customerRepository.allCustomers,
         _isSyncing,
         _syncStatus,
         _appUpdate
@@ -61,9 +80,10 @@ class DashboardViewModel(
         val salesMaster = flows[1] as List<com.example.spjappapk.data.local.entities.SalesMaster>
         val visits = flows[2] as List<com.example.spjappapk.data.local.entities.Visit>
         val allStaff = flows[3] as List<com.example.spjappapk.data.local.entities.SalesPersonEntity>
-        val isSyncing = flows[4] as Boolean
-        val syncStatus = flows[5] as String
-        val appUpdate = flows[6] as AppUpdate?
+        val allCustomers = flows[4] as List<com.example.spjappapk.data.local.entities.Customer>
+        val isSyncing = flows[5] as Boolean
+        val syncStatus = flows[6] as String
+        val appUpdate = flows[7] as AppUpdate?
 
         try {
             if (currentUser == null) return@combine DashboardUiState(isLoading = false, isSyncing = isSyncing, syncStatus = syncStatus)
@@ -134,6 +154,67 @@ class DashboardViewModel(
                 it.salesPersonName.equals(currentUser.name, ignoreCase = true)
             }).filter { it.timestamp in startOfDay..endOfDay }
 
+            // 5. Nominal Nota Belum Dikirim per Jalur Pengiriman (Status: SO & ON PROSES - Seluruh Perusahaan seperti di Desktop)
+            val customerById = allCustomers.filter { it.remoteId.isNotBlank() }.associateBy { it.remoteId.trim().lowercase() }
+            val customerByName = allCustomers.filter { it.name.isNotBlank() }.associateBy { it.name.trim().lowercase() }
+
+            fun findCustomerForSale(customerId: String?, customerName: String?): com.example.spjappapk.data.local.entities.Customer? {
+                if (!customerId.isNullOrBlank()) {
+                    customerById[customerId.trim().lowercase()]?.let { return it }
+                    customerByName[customerId.trim().lowercase()]?.let { return it }
+                }
+                if (!customerName.isNullOrBlank()) {
+                    customerByName[customerName.trim().lowercase()]?.let { return it }
+                }
+                return null
+            }
+
+            fun normalizeRouteName(rawRoute: String?): String {
+                val r = rawRoute?.trim()?.uppercase() ?: ""
+                if (r.isBlank()) return "Tanpa Jalur / Umum"
+                if (r == "LOBAR" || r == "MATARAM" || r == "LOBAR-MATARAM") return "LOBAR-MATARAM"
+                return r
+            }
+
+            val undeliveredSales = salesMaster.filter { sale ->
+                sale.isDeleted != true && (
+                    sale.status.trim().equals("SO", ignoreCase = true) ||
+                    sale.status.trim().equals("ON PROSES", ignoreCase = true)
+                )
+            }
+
+            val routeBreakdown = undeliveredSales
+                .groupBy { sale ->
+                    val cust = findCustomerForSale(sale.customerId, sale.customerName)
+                    normalizeRouteName(cust?.deliveryRoute)
+                }
+                .map { (routeName, salesInRoute) ->
+                    val invoiceItems = salesInRoute
+                        .sortedByDescending { it.orderDate }
+                        .map { sale ->
+                            val cust = findCustomerForSale(sale.customerId, sale.customerName)
+                            val custDisplay = cust?.name?.takeIf { it.isNotBlank() }
+                                ?: com.example.spjappapk.util.BusinessRevenueHelper.resolveCustomerName(sale.customerName, sale.customerId, allCustomers)
+                            val spDisplay = com.example.spjappapk.util.BusinessRevenueHelper.resolveSalesPersonName(sale, allStaff)
+                            DeliveryRouteInvoiceItem(
+                                nota = sale.nota.ifBlank { "-" },
+                                orderDateDisplay = DateTimeUtil.formatDateOnly(sale.orderDate),
+                                customerName = custDisplay,
+                                salesPersonName = spDisplay,
+                                status = sale.status.trim().uppercase(),
+                                total = sale.totalAmount
+                            )
+                        }
+                    DeliveryRouteSummary(
+                        routeName = routeName,
+                        displayName = if (routeName.startsWith("🚚")) routeName else "🚚 $routeName",
+                        orderCount = salesInRoute.size,
+                        totalNominal = salesInRoute.sumOf { it.totalAmount },
+                        invoices = invoiceItems
+                    )
+                }
+                .sortedByDescending { it.totalNominal }
+
             DashboardUiState(
                 totalOrdersToday = todayOrders.size,
                 estimatedOmzetToday = omzetToday,
@@ -146,7 +227,8 @@ class DashboardViewModel(
                 userName = currentUser.name,
                 userRole = currentUser.role ?: "",
                 appUpdate = appUpdate,
-                teamBreakdown = breakdown
+                teamBreakdown = breakdown,
+                deliveryRouteBreakdown = routeBreakdown
             )
         } catch (e: Exception) {
             android.util.Log.e("DashboardVM", "UI Combine Error", e)

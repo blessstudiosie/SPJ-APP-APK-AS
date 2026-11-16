@@ -50,10 +50,20 @@ class SalesViewModel(
             )
         }
 
-        if (query.isBlank()) {
+        val isManagerOrOwner = currentUser?.role?.lowercase() in listOf("manager", "owner", "admin")
+        val roleFiltered = if (isManagerOrOwner || currentUser == null) {
             resolved
         } else {
-            resolved.filter { 
+            resolved.filter {
+                it.salesPersonId.equals(currentUser.id, ignoreCase = true) ||
+                it.salesName.equals(currentUser.name, ignoreCase = true)
+            }
+        }
+
+        if (query.isBlank()) {
+            roleFiltered
+        } else {
+            roleFiltered.filter { 
                 (it.customerName?.contains(query, ignoreCase = true) == true) || 
                 it.nota.contains(query, ignoreCase = true)
             }
