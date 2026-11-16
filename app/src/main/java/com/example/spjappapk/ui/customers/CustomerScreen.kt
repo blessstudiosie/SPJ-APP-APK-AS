@@ -23,6 +23,7 @@ fun CustomerScreen(
     val searchQuery by viewModel.searchQuery.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     var showAddDialog by remember { mutableStateOf(false) }
+    var editingCustomer by remember { mutableStateOf<com.example.spjappapk.data.local.entities.Customer?>(null) }
 
     Scaffold(
         topBar = {
@@ -71,7 +72,10 @@ fun CustomerScreen(
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
                     items(customers) { customer ->
-                        CustomerItem(customer = customer)
+                        CustomerItem(
+                            customer = customer,
+                            onEditClick = { editingCustomer = customer }
+                        )
                         HorizontalDivider()
                     }
                 }
@@ -80,6 +84,8 @@ fun CustomerScreen(
 
         if (showAddDialog) {
             AddCustomerDialog(
+                initialCustomer = null,
+                canEditLimit = viewModel.canEditLimit,
                 onDismiss = { showAddDialog = false },
                 onConfirm = { name, address, ownerName, phone, deliveryRoute, creditLimit, latitude, longitude ->
                     viewModel.addCustomer(
@@ -96,11 +102,36 @@ fun CustomerScreen(
                 }
             )
         }
+
+        editingCustomer?.let { targetCustomer ->
+            AddCustomerDialog(
+                initialCustomer = targetCustomer,
+                canEditLimit = viewModel.canEditLimit,
+                onDismiss = { editingCustomer = null },
+                onConfirm = { name, address, ownerName, phone, deliveryRoute, creditLimit, latitude, longitude ->
+                    viewModel.updateCustomer(
+                        existing = targetCustomer,
+                        name = name,
+                        address = address,
+                        ownerName = ownerName,
+                        phone = phone,
+                        deliveryRoute = deliveryRoute,
+                        creditLimit = creditLimit,
+                        latitude = latitude,
+                        longitude = longitude
+                    )
+                    editingCustomer = null
+                }
+            )
+        }
     }
 }
 
 @Composable
-fun CustomerItem(customer: com.example.spjappapk.data.local.entities.Customer) {
+fun CustomerItem(
+    customer: com.example.spjappapk.data.local.entities.Customer,
+    onEditClick: () -> Unit
+) {
     ListItem(
         headlineContent = { 
             Text(customer.name, fontWeight = FontWeight.Bold) 
@@ -118,24 +149,43 @@ fun CustomerItem(customer: com.example.spjappapk.data.local.entities.Customer) {
                         Text(customer.phone!!, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
                     }
                 }
-                if (!customer.deliveryRoute.isNullOrBlank()) {
-                    Badge(containerColor = MaterialTheme.colorScheme.secondaryContainer) {
-                        Text(customer.deliveryRoute!!, modifier = Modifier.padding(2.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    if (!customer.deliveryRoute.isNullOrBlank()) {
+                        Badge(containerColor = MaterialTheme.colorScheme.secondaryContainer) {
+                            Text(customer.deliveryRoute!!, modifier = Modifier.padding(2.dp))
+                        }
+                    }
+                    if (customer.latitude != null && customer.longitude != null && customer.latitude != 0.0 && customer.longitude != 0.0) {
+                        Badge(containerColor = Color(0xFFE0E7FF), contentColor = Color(0xFF3730A3)) {
+                            Text("📍 GPS Terkunci", modifier = Modifier.padding(2.dp))
+                        }
                     }
                 }
             }
         },
         trailingContent = {
-            Column(horizontalAlignment = Alignment.End) {
-                if (customer.creditLimit > 0) {
-                    Text(
-                        "Limit: ${com.example.spjappapk.util.CurrencyUtil.formatRupiah(customer.creditLimit)}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary
-                    )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(horizontalAlignment = Alignment.End) {
+                    if (customer.creditLimit > 0) {
+                        Text(
+                            "Limit: ${com.example.spjappapk.util.CurrencyUtil.formatRupiah(customer.creditLimit)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    if (customer.syncStatus == "PENDING") {
+                        Icon(Icons.Default.Sync, null, tint = Color(0xFFFFA500), modifier = Modifier.size(16.dp))
+                    }
                 }
-                if (customer.syncStatus == "PENDING") {
-                    Icon(Icons.Default.Sync, null, tint = Color(0xFFFFA500), modifier = Modifier.size(16.dp))
+                IconButton(onClick = onEditClick) {
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = "Edit Konsumen",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
                 }
             }
         }

@@ -39,6 +39,12 @@ class CustomerViewModel(
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing = _isRefreshing.asStateFlow()
 
+    val canEditLimit: Boolean
+        get() {
+            val r = currentUser?.role?.trim()?.lowercase() ?: ""
+            return r == "manager" || r == "owner" || r == "admin" || r == "developer"
+        }
+
     init {
         refresh()
     }
@@ -65,7 +71,7 @@ class CustomerViewModel(
                 ownerName = ownerName,
                 phone = phone,
                 deliveryRoute = deliveryRoute ?: "LOBAR-MATARAM",
-                creditLimit = creditLimit,
+                creditLimit = if (canEditLimit) creditLimit else 0.0,
                 latitude = latitude,
                 longitude = longitude,
                 salesPersonId = currentUser?.id,
@@ -73,6 +79,33 @@ class CustomerViewModel(
                 syncStatus = "PENDING"
             )
             repository.addCustomer(newCustomer)
+        }
+    }
+
+    fun updateCustomer(
+        existing: Customer,
+        name: String,
+        address: String,
+        ownerName: String?,
+        phone: String?,
+        deliveryRoute: String?,
+        creditLimit: Double,
+        latitude: Double?,
+        longitude: Double?
+    ) {
+        viewModelScope.launch {
+            val updated = existing.copy(
+                name = name,
+                address = address,
+                ownerName = ownerName,
+                phone = phone,
+                deliveryRoute = deliveryRoute ?: existing.deliveryRoute ?: "LOBAR-MATARAM",
+                creditLimit = if (canEditLimit) creditLimit else existing.creditLimit,
+                latitude = latitude ?: existing.latitude,
+                longitude = longitude ?: existing.longitude,
+                syncStatus = "PENDING"
+            )
+            repository.addCustomer(updated)
         }
     }
 

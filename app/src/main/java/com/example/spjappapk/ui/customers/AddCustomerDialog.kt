@@ -25,6 +25,8 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
 @Composable
 fun AddCustomerDialog(
+    initialCustomer: com.example.spjappapk.data.local.entities.Customer? = null,
+    canEditLimit: Boolean = false,
     onDismiss: () -> Unit,
     onConfirm: (
         name: String,
@@ -40,19 +42,38 @@ fun AddCustomerDialog(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val locationHelper = remember { LocationHelper(context) }
+    val isEditMode = initialCustomer != null
 
-    var name by remember { mutableStateOf("") }
-    var address by remember { mutableStateOf("") }
-    var ownerName by remember { mutableStateOf("") }
-    var phone by remember { mutableStateOf("") }
-    var creditLimitText by remember { mutableStateOf("") }
+    var name by remember(initialCustomer) { mutableStateOf(initialCustomer?.name ?: "") }
+    var address by remember(initialCustomer) { mutableStateOf(initialCustomer?.address ?: "") }
+    var ownerName by remember(initialCustomer) { mutableStateOf(initialCustomer?.ownerName ?: "") }
+    var phone by remember(initialCustomer) { mutableStateOf(initialCustomer?.phone ?: "") }
+    var creditLimitText by remember(initialCustomer) {
+        mutableStateOf(
+            if (initialCustomer != null && initialCustomer.creditLimit > 0)
+                initialCustomer.creditLimit.toLong().toString()
+            else ""
+        )
+    }
     
-    val routes = listOf("LOBAR-MATARAM", "LOTIM", "LOTENG", "KLU", "SUMBAWA", "DOMPU", "BIMA")
-    var selectedRoute by remember { mutableStateOf("LOBAR-MATARAM") }
+    val routes = listOf("LOBAR-MATARAM", "LOTIM", "LOTENG", "KLU")
+    var selectedRoute by remember(initialCustomer) {
+        val raw = initialCustomer?.deliveryRoute?.trim()?.uppercase()
+        val normalized = when {
+            raw == "LOTIM" || raw == "LOTENG" || raw == "KLU" || raw == "LOBAR-MATARAM" -> raw
+            raw != null && (raw.contains("LOBAR") || raw.contains("MATARAM")) -> "LOBAR-MATARAM"
+            else -> "LOBAR-MATARAM"
+        }
+        mutableStateOf(normalized)
+    }
     var expandedRoute by remember { mutableStateOf(false) }
 
-    var latitude by remember { mutableStateOf<Double?>(null) }
-    var longitude by remember { mutableStateOf<Double?>(null) }
+    var latitude by remember(initialCustomer) {
+        mutableStateOf(initialCustomer?.latitude?.takeIf { it != 0.0 })
+    }
+    var longitude by remember(initialCustomer) {
+        mutableStateOf(initialCustomer?.longitude?.takeIf { it != 0.0 })
+    }
     var isFetchingLocation by remember { mutableStateOf(false) }
 
     val permissionsState = rememberMultiplePermissionsState(
@@ -66,7 +87,7 @@ fun AddCustomerDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Tambah Konsumen Baru") },
+        title = { Text(if (isEditMode) "Edit Data Konsumen" else "Tambah Konsumen Baru") },
         text = {
             Column(
                 modifier = Modifier
@@ -145,8 +166,9 @@ fun AddCustomerDialog(
 
                 OutlinedTextField(
                     value = creditLimitText,
-                    onValueChange = { if (it.all { c -> c.isDigit() }) creditLimitText = it },
-                    label = { Text("Limit Piutang (Rp)") },
+                    onValueChange = { if (canEditLimit && it.all { c -> c.isDigit() }) creditLimitText = it },
+                    enabled = canEditLimit,
+                    label = { Text(if (canEditLimit) "Limit Piutang (Rp)" else "Limit Piutang (Khusus Admin/Manager)") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
@@ -225,20 +247,25 @@ fun AddCustomerDialog(
         confirmButton = {
             Button(
                 onClick = {
+                    val finalLimit = if (canEditLimit) {
+                        creditLimitText.toDoubleOrNull() ?: 0.0
+                    } else {
+                        initialCustomer?.creditLimit ?: 0.0
+                    }
                     onConfirm(
                         name.trim(),
                         address.trim(),
                         ownerName.trim().ifBlank { null },
                         phone.trim().ifBlank { null },
                         selectedRoute,
-                        creditLimitText.toDoubleOrNull() ?: 0.0,
+                        finalLimit,
                         latitude,
                         longitude
                     )
                 },
                 enabled = isFormValid
             ) {
-                Text("Simpan Konsumen")
+                Text(if (isEditMode) "Update Konsumen" else "Simpan Konsumen")
             }
         },
         dismissButton = {
