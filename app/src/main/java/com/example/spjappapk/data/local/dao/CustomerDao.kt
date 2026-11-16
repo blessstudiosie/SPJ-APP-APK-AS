@@ -21,6 +21,9 @@ interface CustomerDao {
     @Query("SELECT * FROM customers WHERE sync_status = 'PENDING'")
     suspend fun getUnsyncedCustomers(): List<Customer>
 
+    @Query("SELECT * FROM customers WHERE remote_id = :remoteId LIMIT 1")
+    suspend fun getCustomerById(remoteId: String): Customer?
+
     @Query("UPDATE customers SET sync_status = :status WHERE remote_id = :remoteId")
     suspend fun updateSyncStatus(remoteId: String, status: String)
 

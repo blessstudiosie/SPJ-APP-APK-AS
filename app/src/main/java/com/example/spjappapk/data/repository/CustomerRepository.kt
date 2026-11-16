@@ -10,6 +10,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 class CustomerRepository(
     private val customerDao: CustomerDao,
@@ -67,22 +69,22 @@ class CustomerRepository(
             // Simpan lokal dulu sebagai PENDING
             customerDao.insertAll(listOf(customer.copy(syncStatus = "PENDING")))
             
-            val insertData = mutableMapOf<String, Any?>(
-                "id" to customer.remoteId,
-                "name" to customer.name,
-                "address" to (customer.address ?: ""),
-                "owner_name" to (customer.ownerName ?: ""),
-                "phone" to (customer.phone ?: ""),
-                "latitude" to (customer.latitude ?: 0.0),
-                "longitude" to (customer.longitude ?: 0.0),
-                "jalur_pengiriman" to (customer.deliveryRoute ?: "LOBAR-MATARAM"),
-                "limit_piutang" to customer.creditLimit
-            )
-            if (!customer.salesPersonId.isNullOrBlank()) {
-                insertData["sales_person_id"] = customer.salesPersonId
-            }
-            if (!customer.salesPersonName.isNullOrBlank()) {
-                insertData["sales_person"] = customer.salesPersonName
+            val insertData = buildJsonObject {
+                put("id", customer.remoteId)
+                put("name", customer.name.trim())
+                put("address", customer.address ?: "")
+                put("owner_name", customer.ownerName ?: "")
+                put("phone", customer.phone ?: "")
+                put("latitude", customer.latitude ?: 0.0)
+                put("longitude", customer.longitude ?: 0.0)
+                put("jalur_pengiriman", customer.deliveryRoute ?: "LOBAR-MATARAM")
+                put("limit_piutang", customer.creditLimit)
+                if (!customer.salesPersonId.isNullOrBlank()) {
+                    put("sales_person_id", customer.salesPersonId)
+                }
+                if (!customer.salesPersonName.isNullOrBlank()) {
+                    put("sales_person", customer.salesPersonName)
+                }
             }
 
             // Coba push langsung menggunakan upsert
@@ -93,12 +95,7 @@ class CustomerRepository(
             syncLogDao.insert(SyncLog(event = "Customers", status = "SUCCESS", message = "Pelanggan ${customer.name} berhasil didaftarkan"))
         } catch (e: Exception) {
             val errorMsg = e.localizedMessage ?: "Offline"
-            if (errorMsg.contains("23505") || errorMsg.contains("already exists")) {
-                customerDao.updateSyncStatus(customer.remoteId, "SUCCESS")
-                syncLogDao.insert(SyncLog(event = "Customers", status = "SUCCESS", message = "Pelanggan ${customer.name} sudah terdaftar di server"))
-            } else {
-                syncLogDao.insert(SyncLog(event = "Customers", status = "INFO", message = "Pelanggan disimpan lokal (Akan sinkron saat online)"))
-            }
+            syncLogDao.insert(SyncLog(event = "Customers", status = "INFO", message = "Pelanggan disimpan lokal, akan disinkronkan saat online ($errorMsg)"))
         }
     }
 
@@ -108,11 +105,11 @@ class CustomerRepository(
             customerDao.updateCustomerCoordinates(remoteId, lat, lng)
             
             // Try to push to Supabase
-            val updateData = mapOf(
-                "latitude" to lat,
-                "longitude" to lng,
-                "updated_at" to com.example.spjappapk.util.DateTimeUtil.getUtcIsoFormat().format(java.util.Date())
-            )
+            val updateData = buildJsonObject {
+                put("latitude", lat)
+                put("longitude", lng)
+                put("updated_at", com.example.spjappapk.util.DateTimeUtil.getUtcIsoFormat().format(java.util.Date()))
+            }
             supabaseClient.postgrest["customers"].update(updateData) {
                 filter { eq("id", remoteId) }
             }
@@ -131,14 +128,15 @@ class CustomerRepository(
             
             if (response.data == "[]") {
                 // Jika tidak ada, daftarkan sebagai placeholder agar visit bisa masuk
-                val data = mapOf(
-                    "id" to remoteId,
-                    "name" to name,
-                    "address" to "Auto-generated from Orphan Visit",
-                    "sales_person_id" to salesId,
-                    "sales_person" to salesName
-                )
-                supabaseClient.postgrest["customers"].insert(data)
+                val data = buildJsonObject {
+                    put("id", remoteId)
+                    put("name", name.trim())
+                    put("address", "Auto-generated from Visit")
+                    put("jalur_pengiriman", "LOBAR-MATARAM")
+                    if (!salesId.isNullOrBlank()) put("sales_person_id", salesId)
+                    if (!salesName.isNullOrBlank()) put("sales_person", salesName)
+                }
+                supabaseClient.postgrest["customers"].upsert(data)
                 android.util.Log.d("CustomerRepo", "Fixed orphan customer: $name")
             }
         } catch (e: Exception) {

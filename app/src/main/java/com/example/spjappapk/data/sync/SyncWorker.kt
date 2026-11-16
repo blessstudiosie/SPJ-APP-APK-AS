@@ -34,6 +34,71 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             syncLogDao.insert(SyncLog(event = event, status = status, message = message))
         }
 
+        suspend fun ensureCustomerExistsOnServer(
+            customerId: String,
+            customerName: String,
+            salesPersonId: String?,
+            salesPersonName: String?,
+            fallbackLat: Double? = null,
+            fallbackLng: Double? = null
+        ): String? {
+            return try {
+                // 1. Cek apakah ID konsumen sudah ada di tabel customers Supabase
+                val byIdResp = SupabaseClient.client.postgrest["customers"].select {
+                    filter { eq("id", customerId) }
+                }
+                val byIdArr = Json.parseToJsonElement(byIdResp.data).jsonArray
+                if (byIdArr.isNotEmpty()) {
+                    return customerId
+                }
+
+                // 2. Cek apakah nama toko sudah ada di Supabase dengan ID yang berbeda
+                val cleanName = customerName.trim()
+                if (cleanName.isNotEmpty()) {
+                    val byNameResp = SupabaseClient.client.postgrest["customers"].select {
+                        filter { ilike("name", cleanName) }
+                    }
+                    val byNameArr = Json.parseToJsonElement(byNameResp.data).jsonArray
+                    if (byNameArr.isNotEmpty()) {
+                        val existingId = byNameArr[0].jsonObject["id"]?.toString()?.replace("\"", "")
+                        if (!existingId.isNullOrBlank()) {
+                            return existingId
+                        }
+                    }
+                }
+
+                // 3. Jika belum ada sama sekali di server, daftarkan dari data lokal Room menggunakan buildJsonObject
+                val localCust = customerDao.getCustomerById(customerId)
+                val validRoute = localCust?.deliveryRoute?.uppercase()?.trim()?.takeIf {
+                    it in listOf("LOBAR-MATARAM", "LOTIM", "LOTENG", "KLU")
+                } ?: "LOBAR-MATARAM"
+
+                val customerPayload = buildJsonObject {
+                    put("id", customerId)
+                    put("name", (localCust?.name ?: cleanName).trim().ifEmpty { "Toko $customerId" })
+                    put("address", localCust?.address ?: "")
+                    put("owner_name", localCust?.ownerName ?: "")
+                    put("phone", localCust?.phone ?: "")
+                    put("latitude", localCust?.latitude ?: fallbackLat ?: 0.0)
+                    put("longitude", localCust?.longitude ?: fallbackLng ?: 0.0)
+                    put("jalur_pengiriman", validRoute)
+                    put("limit_piutang", localCust?.creditLimit ?: 0.0)
+                    val spId = localCust?.salesPersonId ?: salesPersonId
+                    val spName = localCust?.salesPersonName ?: salesPersonName
+                    if (!spId.isNullOrBlank()) put("sales_person_id", spId)
+                    if (!spName.isNullOrBlank()) put("sales_person", spName)
+                }
+
+                SupabaseClient.client.postgrest["customers"].upsert(customerPayload)
+                customerDao.updateSyncStatus(customerId, "SUCCESS")
+                logSync("Customers", "SUCCESS", "Auto-synced customer ${(localCust?.name ?: cleanName)} to server")
+                customerId
+            } catch (e: Exception) {
+                logSync("Customers", "WARN", "Could not auto-verify customer $customerName: ${e.message}")
+                null
+            }
+        }
+
         return try {
             android.util.Log.d("SyncWorker", "doWork() started")
             logSync("General", "INFO", "Starting sync work...")
@@ -45,26 +110,31 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             }
             unsyncedCustomers.forEach { customer ->
                 try {
-                    val insertData = mutableMapOf<String, Any?>(
-                        "id" to customer.remoteId,
-                        "name" to customer.name,
-                        "address" to (customer.address ?: ""),
-                        "owner_name" to (customer.ownerName ?: ""),
-                        "phone" to (customer.phone ?: ""),
-                        "latitude" to (customer.latitude ?: 0.0),
-                        "longitude" to (customer.longitude ?: 0.0),
-                        "jalur_pengiriman" to (customer.deliveryRoute ?: "LOBAR-MATARAM"),
-                        "limit_piutang" to customer.creditLimit
-                    )
-                    if (!customer.salesPersonId.isNullOrBlank()) {
-                        insertData["sales_person_id"] = customer.salesPersonId
-                    }
-                    if (!customer.salesPersonName.isNullOrBlank()) {
-                        insertData["sales_person"] = customer.salesPersonName
+                    val validRoute = customer.deliveryRoute?.uppercase()?.trim()?.takeIf {
+                        it in listOf("LOBAR-MATARAM", "LOTIM", "LOTENG", "KLU")
+                    } ?: "LOBAR-MATARAM"
+
+                    val insertData = buildJsonObject {
+                        put("id", customer.remoteId)
+                        put("name", customer.name.trim())
+                        put("address", customer.address ?: "")
+                        put("owner_name", customer.ownerName ?: "")
+                        put("phone", customer.phone ?: "")
+                        put("latitude", customer.latitude ?: 0.0)
+                        put("longitude", customer.longitude ?: 0.0)
+                        put("jalur_pengiriman", validRoute)
+                        put("limit_piutang", customer.creditLimit)
+                        if (!customer.salesPersonId.isNullOrBlank()) {
+                            put("sales_person_id", customer.salesPersonId)
+                        }
+                        if (!customer.salesPersonName.isNullOrBlank()) {
+                            put("sales_person", customer.salesPersonName)
+                        }
                     }
 
                     SupabaseClient.client.postgrest["customers"].upsert(insertData)
                     customerDao.updateSyncStatus(customer.remoteId, "SUCCESS")
+                    logSync("Customers", "SUCCESS", "Customer ${customer.name} synced to server")
                 } catch (e: Exception) {
                     val msg = e.message ?: ""
                     if (msg.contains("23505") || msg.contains("already exists")) {
@@ -102,27 +172,63 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                 e.printStackTrace()
             }
 
-            // 2. PUSH: Sync Visits to visit_logs_queue
+            // 2. PUSH: Sync Visits to check_in_logs
             val unsyncedVisits = visitDao.getUnsyncedVisits()
             if (unsyncedVisits.isNotEmpty()) {
                 logSync("Visits", "INFO", "Syncing ${unsyncedVisits.size} unsynced visits")
             }
             unsyncedVisits.forEach { visit ->
                 try {
-                    // Check-in reports go directly to master table check_in_logs
+                    val checkInDateIso = com.example.spjappapk.util.DateTimeUtil.getUtcIsoFormat().format(java.util.Date(visit.timestamp))
+
+                    // Pastikan customer_id sudah terdaftar di tabel customers Supabase (mencegah error FK 23503)
+                    val resolvedCustomerId = ensureCustomerExistsOnServer(
+                        customerId = visit.customerId,
+                        customerName = visit.customerName,
+                        salesPersonId = visit.userId,
+                        salesPersonName = visit.salesPersonName,
+                        fallbackLat = visit.locationLat,
+                        fallbackLng = visit.locationLng
+                    )
+
                     val insertData = buildJsonObject {
                         put("sales_person_id", visit.userId)
                         put("sales_person", visit.salesPersonName)
-                        put("customer_id", visit.customerId)
+                        if (!resolvedCustomerId.isNullOrBlank()) {
+                            put("customer_id", resolvedCustomerId)
+                        } else {
+                            put("customer_id", JsonNull)
+                        }
                         put("customer_name", visit.customerName)
                         put("latitude", visit.locationLat)
                         put("longitude", visit.locationLng)
                         put("notes", visit.notes ?: "")
-                        put("check_in_date", com.example.spjappapk.util.DateTimeUtil.getUtcIsoFormat().format(java.util.Date(visit.timestamp)))
+                        put("check_in_date", checkInDateIso)
                     }
 
-                    val response = SupabaseClient.client.postgrest["check_in_logs"].insert(insertData) {
-                        select()
+                    val response = try {
+                        SupabaseClient.client.postgrest["check_in_logs"].insert(insertData) {
+                            select()
+                        }
+                    } catch (fkEx: Exception) {
+                        val errMsg = fkEx.message ?: ""
+                        if (errMsg.contains("23503") || errMsg.contains("foreign key")) {
+                            val fallbackData = buildJsonObject {
+                                put("sales_person_id", visit.userId)
+                                put("sales_person", visit.salesPersonName)
+                                put("customer_id", JsonNull)
+                                put("customer_name", visit.customerName)
+                                put("latitude", visit.locationLat)
+                                put("longitude", visit.locationLng)
+                                put("notes", visit.notes ?: "")
+                                put("check_in_date", checkInDateIso)
+                            }
+                            SupabaseClient.client.postgrest["check_in_logs"].insert(fallbackData) {
+                                select()
+                            }
+                        } else {
+                            throw fkEx
+                        }
                     }
 
                     val insertedData = Json.parseToJsonElement(response.data).jsonArray
@@ -172,12 +278,19 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                         }
                     }
 
+                    val resolvedOrderCustomerId = ensureCustomerExistsOnServer(
+                        customerId = order.customerId,
+                        customerName = order.customerName,
+                        salesPersonId = order.salesPersonId,
+                        salesPersonName = order.salesPersonName
+                    ) ?: order.customerId
+
                     val insertData = buildJsonObject {
                         put("id", saleId)
                         put("requested_by", order.salesPersonName)
                         put("sales_person_id", order.salesPersonId)
                         put("customer_name", order.customerName)
-                        put("customer_id", order.customerId)
+                        put("customer_id", resolvedOrderCustomerId)
                         put("items", if (parsedItems.isNotEmpty()) enrichedItemsJson else Json.parseToJsonElement(order.details))
                         put("notes", if (extraNote.isNotBlank()) "$notaNum | $extraNote" else notaNum)
                         put("status", "pending")
@@ -210,7 +323,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                         val saleMasterJson = buildJsonObject {
                             put("id", finalRemoteId)
                             put("nota", notaNum)
-                            put("customer_id", order.customerId)
+                            put("customer_id", resolvedOrderCustomerId)
                             put("customer_name", order.customerName)
                             put("sales_person_id", order.salesPersonId)
                             put("sales_person", order.salesPersonName)
