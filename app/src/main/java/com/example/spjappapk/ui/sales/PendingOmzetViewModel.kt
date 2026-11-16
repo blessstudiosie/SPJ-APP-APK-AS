@@ -96,8 +96,9 @@ class PendingOmzetViewModel(
         // 2. Convert active local SalesOrder queue items into OrderDisplayItem
         val activeMasterRemoteIds = activeMasterPending.mapNotNull { it.order.remoteId }.toSet()
         val activeLocalPending = localQueueOrders.filter { order ->
+            val candidateId = order.remoteId ?: order.createdAt
             order.status.trim().uppercase() in pendingStatuses &&
-            (order.remoteId.isNullOrBlank() || !activeMasterRemoteIds.contains(order.remoteId))
+            (candidateId.isNullOrBlank() || !activeMasterRemoteIds.contains(candidateId))
         }.map { order ->
             val items = try {
                 json.decodeFromString<List<SalesOrderItem>>(order.details)

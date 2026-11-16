@@ -45,12 +45,13 @@ fun AddSalesOrderScreen(
     var showAddItemDialog by remember { mutableStateOf(false) }
     var showCreateCustomerDialog by remember { mutableStateOf(false) }
 
+    val context = androidx.compose.ui.platform.LocalContext.current
     val totalAmount = orderItems.sumOf { it.price * it.quantity }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Input Pesanan Baru") },
+                title = { Text("Input Pesanan Baru (SO)") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -86,13 +87,18 @@ fun AddSalesOrderScreen(
                                     notes,
                                     orderItems.toList()
                                 )
+                                android.widget.Toast.makeText(
+                                    context,
+                                    "✅ Pesanan ${customer.name} berhasil disimpan dengan status SO!",
+                                    android.widget.Toast.LENGTH_SHORT
+                                ).show()
                                 onNavigateBack()
                             }
                         },
                         modifier = Modifier.fillMaxWidth(),
                         enabled = selectedCustomer != null && orderItems.isNotEmpty()
                     ) {
-                        Text("Kirim Pesanan ke Antrean")
+                        Text("Simpan & Kirim Pesanan (Status: SO)")
                     }
                 }
             }

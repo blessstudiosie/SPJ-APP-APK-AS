@@ -26,7 +26,7 @@ class PendingSyncViewModel(
         visitRepository.allVisits
     ) { sales, visits ->
         PendingSyncUiState(
-            pendingOrders = sales.filter { it.status == "PENDING" },
+            pendingOrders = sales.filter { it.remoteId == null && (it.status == "PENDING" || it.status == "SO") },
             pendingVisits = visits.filter { it.syncStatus == "PENDING" }
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PendingSyncUiState())

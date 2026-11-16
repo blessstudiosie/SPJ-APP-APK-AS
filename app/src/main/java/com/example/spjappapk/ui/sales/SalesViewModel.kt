@@ -130,17 +130,79 @@ class SalesViewModel(
     fun addOrder(customerId: String, customerName: String, salesPersonName: String, orderDate: String, notes: String?, items: List<SalesOrderItem>) {
         viewModelScope.launch {
             val userId = currentUser?.id ?: "anonymous"
+            val saleId = java.util.UUID.randomUUID().toString()
+            val datePrefix = java.text.SimpleDateFormat("yyMMdd", java.util.Locale.US).format(java.util.Date())
+            val notaNum = "SO-$datePrefix-${saleId.take(6).uppercase(java.util.Locale.US)}"
+            val normalizedItems = items.map {
+                it.copy(
+                    productNameFallback = it.displayProductName,
+                    unitPriceFallback = it.displayPrice
+                )
+            }
+            val total = normalizedItems.sumOf { it.quantity * it.displayPrice }
+            val nowMillis = System.currentTimeMillis()
+            val nowIso = com.example.spjappapk.util.DateTimeUtil.getUtcIsoFormat().format(java.util.Date(nowMillis))
+            val combinedNotes = if (!notes.isNullOrBlank()) "$notaNum | $notes" else notaNum
+            val descText = if (!notes.isNullOrBlank()) {
+                "[NEW] Pesanan SO dari Mobile Sales ($salesPersonName) - $notes"
+            } else {
+                "[NEW] Pesanan SO dari Mobile Sales ($salesPersonName)"
+            }
+
             val order = SalesOrder(
                 salesPersonId = userId,
                 salesPersonName = salesPersonName,
                 customerId = customerId,
                 customerName = customerName,
                 orderDate = orderDate,
-                notes = notes,
-                details = Json.encodeToString(items),
-                status = "PENDING"
+                notes = combinedNotes,
+                details = Json.encodeToString(normalizedItems),
+                totalAmount = total,
+                status = "SO",
+                timestamp = nowMillis,
+                createdAt = saleId
             )
-            repository.insertOrder(order)
+
+            val localMaster = SalesMaster(
+                id = saleId,
+                nota = notaNum,
+                orderDate = nowMillis,
+                deliveryDate = null,
+                customerId = customerId,
+                customerName = customerName,
+                salesPersonId = userId,
+                salesName = salesPersonName,
+                totalAmount = total,
+                paid = 0.0,
+                remaining = total,
+                description = descText,
+                status = "SO",
+                createdAt = nowIso,
+                updatedAt = nowIso,
+                isCheckedSystem2 = false,
+                isDeleted = false,
+                isSynced = true
+            )
+
+            val localDetails = normalizedItems.map { item ->
+                SalesDetailEntity(
+                    id = java.util.UUID.randomUUID().toString(),
+                    saleId = saleId,
+                    nota = notaNum,
+                    productId = item.productId,
+                    itemName = item.displayProductName,
+                    quantity = item.quantity,
+                    price = item.displayPrice,
+                    priceCategory = item.priceCategory,
+                    subtotal = item.quantity * item.displayPrice,
+                    createdAt = nowIso,
+                    updatedAt = nowIso,
+                    isCheckedSystem2 = false,
+                    isDeleted = false
+                )
+            }
+
+            repository.insertOrderWithLocalSoMaster(order, localMaster, localDetails)
         }
     }
 

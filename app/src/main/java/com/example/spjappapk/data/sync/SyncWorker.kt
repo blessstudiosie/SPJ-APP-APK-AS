@@ -137,33 +137,120 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                 }
             }
 
-            // 3. PUSH: Sync Sales Orders to sales_orders_queue
+            // 3. PUSH: Sync Sales Orders to sales_orders_queue & sales (status = SO)
             val unsyncedOrders = salesOrderDao.getUnsyncedOrders()
             if (unsyncedOrders.isNotEmpty()) {
-                logSync("Sales", "INFO", "Syncing ${unsyncedOrders.size} unsynced orders")
+                logSync("Sales", "INFO", "Syncing ${unsyncedOrders.size} unsynced orders (SO)")
             }
             unsyncedOrders.forEach { order ->
                 try {
+                    val saleId = order.createdAt?.takeIf { it.length >= 30 } ?: java.util.UUID.randomUUID().toString()
+                    val datePrefix = java.text.SimpleDateFormat("yyMMdd", java.util.Locale.US).format(java.util.Date(order.timestamp))
+                    val rawNotes = order.notes ?: ""
+                    val notaNum = rawNotes.substringBefore(" | ").trim().takeIf { it.startsWith("SO-", ignoreCase = true) }
+                        ?: "SO-$datePrefix-${saleId.take(6).uppercase(java.util.Locale.US)}"
+                    val extraNote = if (rawNotes.contains(" | ")) rawNotes.substringAfter(" | ").trim() else if (!rawNotes.startsWith("SO-", ignoreCase = true)) rawNotes.trim() else ""
+
+                    val parsedItems = try {
+                        Json { ignoreUnknownKeys = true }.decodeFromString<List<com.example.spjappapk.data.local.entities.SalesOrderItem>>(order.details)
+                    } catch (e: Exception) {
+                        emptyList()
+                    }
+                    val totalAmount = parsedItems.sumOf { it.quantity * it.displayPrice }.takeIf { it > 0.0 } ?: order.totalAmount
+                    val enrichedItemsJson = kotlinx.serialization.json.buildJsonArray {
+                        parsedItems.forEach { item ->
+                            add(buildJsonObject {
+                                put("product_id", item.productId)
+                                put("item_name", item.displayProductName)
+                                put("product_name", item.displayProductName)
+                                put("qty", item.quantity.toInt())
+                                put("price", item.displayPrice)
+                                put("unit_price", item.displayPrice)
+                                put("price_category", item.priceCategory.ifBlank { "R" })
+                                put("subtotal", item.quantity * item.displayPrice)
+                            })
+                        }
+                    }
+
                     val insertData = buildJsonObject {
+                        put("id", saleId)
                         put("requested_by", order.salesPersonName)
-                        put("sales_person_id", order.salesPersonId) // Kirim ID Sales
+                        put("sales_person_id", order.salesPersonId)
                         put("customer_name", order.customerName)
-                        put("customer_id", order.customerId) // Kirim ID Konsumen
-                        put("items", Json.parseToJsonElement(order.details))
-                        put("notes", order.notes ?: "")
+                        put("customer_id", order.customerId)
+                        put("items", if (parsedItems.isNotEmpty()) enrichedItemsJson else Json.parseToJsonElement(order.details))
+                        put("notes", if (extraNote.isNotBlank()) "$notaNum | $extraNote" else notaNum)
                         put("status", "pending")
                     }
 
-                    val response = SupabaseClient.client.postgrest["sales_orders_queue"].insert(insertData) {
-                        select()
+                    var finalRemoteId = saleId
+                    try {
+                        val response = SupabaseClient.client.postgrest["sales_orders_queue"].insert(insertData) {
+                            select()
+                        }
+                        val insertedData = Json.parseToJsonElement(response.data).jsonArray
+                        if (insertedData.isNotEmpty()) {
+                            finalRemoteId = insertedData[0].jsonObject["id"]?.toString()?.replace("\"", "") ?: saleId
+                        }
+                    } catch (queueEx: Exception) {
+                        val msg = queueEx.message ?: ""
+                        if (!msg.contains("23505") && !msg.contains("duplicate key")) {
+                            throw queueEx
+                        }
                     }
 
-                    val insertedData = Json.parseToJsonElement(response.data).jsonArray
-                    if (insertedData.isNotEmpty()) {
-                        val remoteId = insertedData[0].jsonObject["id"]?.toString()?.replace("\"", "")
-                        salesOrderDao.updateOrderStatus(order.id, "PROCESSED", remoteId)
-                        logSync("Sales", "SUCCESS", "Order for ${order.customerName} pushed to queue")
+                    // Langsung daftarkan juga ke tabel utama 'sales' & 'sales_details' dengan status "SO"
+                    try {
+                        val nowIso = com.example.spjappapk.util.DateTimeUtil.getUtcIsoFormat().format(java.util.Date(order.timestamp))
+                        val descText = if (extraNote.isNotBlank()) {
+                            "[NEW] Pesanan SO dari Mobile Sales (${order.salesPersonName}) - $extraNote"
+                        } else {
+                            "[NEW] Pesanan SO dari Mobile Sales (${order.salesPersonName})"
+                        }
+                        val saleMasterJson = buildJsonObject {
+                            put("id", finalRemoteId)
+                            put("nota", notaNum)
+                            put("customer_id", order.customerId)
+                            put("customer_name", order.customerName)
+                            put("sales_person_id", order.salesPersonId)
+                            put("sales_person", order.salesPersonName)
+                            put("order_date", nowIso)
+                            put("status", "SO")
+                            put("total", totalAmount)
+                            put("paid", 0.0)
+                            put("remaining", totalAmount)
+                            put("description", descText)
+                            put("is_checked_system2", false)
+                            put("is_deleted", false)
+                        }
+                        SupabaseClient.client.postgrest["sales"].upsert(saleMasterJson)
+
+                        if (parsedItems.isNotEmpty()) {
+                            val detailsArray = kotlinx.serialization.json.buildJsonArray {
+                                parsedItems.forEach { item ->
+                                    add(buildJsonObject {
+                                        put("id", java.util.UUID.randomUUID().toString())
+                                        put("sale_id", finalRemoteId)
+                                        put("nota", notaNum)
+                                        put("product_id", item.productId)
+                                        put("item_name", item.displayProductName)
+                                        put("qty", item.quantity.toInt())
+                                        put("price", item.displayPrice)
+                                        put("price_category", item.priceCategory.ifBlank { "R" })
+                                        put("subtotal", item.quantity * item.displayPrice)
+                                        put("is_checked_system2", false)
+                                        put("is_deleted", false)
+                                    })
+                                }
+                            }
+                            SupabaseClient.client.postgrest["sales_details"].insert(detailsArray)
+                        }
+                    } catch (directSaleEx: Exception) {
+                        logSync("Sales", "WARN", "Direct SO sync warning for ${order.customerName}: ${directSaleEx.message}")
                     }
+
+                    salesOrderDao.updateOrderStatus(order.id, "SO", finalRemoteId)
+                    logSync("Sales", "SUCCESS", "Order SO ($notaNum) for ${order.customerName} synced")
                 } catch (e: Exception) {
                     logSync("Sales", "ERROR", "Failed to push order for ${order.customerName}: ${e.message}")
                     e.printStackTrace()

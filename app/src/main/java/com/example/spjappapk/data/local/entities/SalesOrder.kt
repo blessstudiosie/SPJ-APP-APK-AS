@@ -24,7 +24,7 @@ data class SalesOrder(
     val notes: String? = null,
     val details: String,
     @ColumnInfo(name = "total_amount") val totalAmount: Double = 0.0,
-    val status: String = "PENDING", // PENDING, PROCESSED, APPROVED, REJECTED
+    val status: String = "SO", // SO, PENDING, PROCESSED, APPROVED, REJECTED
     @ColumnInfo(name = "admin_notes") val adminNotes: String? = null,
     val timestamp: Long = System.currentTimeMillis(),
 

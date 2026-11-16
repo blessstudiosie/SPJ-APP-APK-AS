@@ -327,12 +327,36 @@ fun SaleItem(order: SalesOrder, onClick: (SalesOrder) -> Unit) {
             }
         },
         trailingContent = { 
-            Row {
-                when (order.status) {
-                    "PROCESSED" -> Icon(Icons.Default.CloudDone, contentDescription = "Processed", tint = MaterialTheme.colorScheme.primary)
-                    "APPROVED" -> Icon(Icons.Default.CheckCircle, contentDescription = "Approved", tint = Color(0xFF388E3C))
-                    "REJECTED" -> Icon(Icons.Default.Cancel, contentDescription = "Rejected", tint = MaterialTheme.colorScheme.error)
-                    else -> Icon(Icons.Default.CloudQueue, contentDescription = "Pending", tint = Color.Gray)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Badge(
+                    containerColor = when (order.status.uppercase()) {
+                        "SO" -> Color(0xFFDBEAFE)
+                        "APPROVED" -> Color(0xFFDCFCE7)
+                        "REJECTED" -> Color(0xFFFEE2E2)
+                        else -> Color(0xFFF1F5F9)
+                    },
+                    contentColor = when (order.status.uppercase()) {
+                        "SO" -> Color(0xFF1D4ED8)
+                        "APPROVED" -> Color(0xFF15803D)
+                        "REJECTED" -> Color(0xFFB91C1C)
+                        else -> Color(0xFF475569)
+                    }
+                ) {
+                    Text(
+                        text = if (order.status == "PENDING" || order.status == "PROCESSED") "SO" else order.status,
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                when {
+                    order.remoteId != null && (order.status == "SO" || order.status == "PROCESSED") ->
+                        Icon(Icons.Default.CloudDone, contentDescription = "Synced SO", tint = MaterialTheme.colorScheme.primary)
+                    order.status == "APPROVED" ->
+                        Icon(Icons.Default.CheckCircle, contentDescription = "Approved", tint = Color(0xFF388E3C))
+                    order.status == "REJECTED" ->
+                        Icon(Icons.Default.Cancel, contentDescription = "Rejected", tint = MaterialTheme.colorScheme.error)
+                    else ->
+                        Icon(Icons.Default.CloudQueue, contentDescription = "Pending Sync", tint = Color.Gray)
                 }
             }
         },

@@ -32,6 +32,7 @@ fun InventoryScreen(viewModel: InventoryViewModel) {
     val searchQuery by viewModel.searchQuery.collectAsState()
     val filterState by viewModel.filterState.collectAsState()
     val categories by viewModel.categories.collectAsState()
+    val zeroStockCount by viewModel.zeroStockCount.collectAsState()
 
     var selectedItem by remember { mutableStateOf<Inventory?>(null) }
     var showFilterSheet by remember { mutableStateOf(false) }
@@ -55,6 +56,7 @@ fun InventoryScreen(viewModel: InventoryViewModel) {
             searchQuery = searchQuery,
             filterState = filterState,
             categories = categories,
+            zeroStockCount = zeroStockCount,
             onSearchQueryChange = { viewModel.updateSearchQuery(it) },
             onOpenFilter = { showFilterSheet = true },
             onCategorySelected = { viewModel.selectCategory(it) },
@@ -84,6 +86,7 @@ fun InventoryList(
     searchQuery: String,
     filterState: ProductFilterState,
     categories: List<String>,
+    zeroStockCount: Int = 0,
     onSearchQueryChange: (String) -> Unit,
     onOpenFilter: () -> Unit,
     onCategorySelected: (String?) -> Unit,
@@ -136,6 +139,44 @@ fun InventoryList(
                 }
             }
 
+            // Quick Stock Filter Chips (Stok Habis 0 & Stok Ready)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 2.dp)
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                FilterChip(
+                    selected = filterState.onlyZeroStock,
+                    onClick = {
+                        val nextZero = !filterState.onlyZeroStock
+                        onUpdateFilter(filterState.copy(onlyZeroStock = nextZero, onlyStockReady = if (nextZero) false else filterState.onlyStockReady))
+                    },
+                    label = {
+                        Text(
+                            text = "⚠️ Stok Habis (0) [$zeroStockCount]",
+                            fontWeight = FontWeight.Bold
+                        )
+                    },
+                    colors = FilterChipDefaults.filterChipColors(
+                        containerColor = Color(0xFFFEF2F2),
+                        labelColor = Color(0xFFDC2626),
+                        selectedContainerColor = Color(0xFFDC2626),
+                        selectedLabelColor = Color.White
+                    )
+                )
+                FilterChip(
+                    selected = filterState.onlyStockReady,
+                    onClick = {
+                        val nextReady = !filterState.onlyStockReady
+                        onUpdateFilter(filterState.copy(onlyStockReady = nextReady, onlyZeroStock = if (nextReady) false else filterState.onlyZeroStock))
+                    },
+                    label = { Text("✅ Stok Ready (> 0)") }
+                )
+            }
+
             // Quick Category Chips
             if (categories.isNotEmpty()) {
                 Row(
@@ -167,6 +208,12 @@ fun InventoryList(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    if (filterState.onlyZeroStock) {
+                        AssistChip(
+                            onClick = { onUpdateFilter(filterState.copy(onlyZeroStock = false)) },
+                            label = { Text("Stok Habis (0) ✕") }
+                        )
+                    }
                     if (filterState.onlyStockReady) {
                         AssistChip(
                             onClick = { onUpdateFilter(filterState.copy(onlyStockReady = false)) },
@@ -232,14 +279,41 @@ fun InventoryList(
                         modifier = Modifier.fillMaxSize()
                     ) {
                         items(items) { item ->
+                            val isZeroStock = item.stockQuantity <= 0
                             ListItem(
-                                headlineContent = { Text(item.name, fontWeight = FontWeight.SemiBold) },
+                                colors = ListItemDefaults.colors(
+                                    containerColor = if (isZeroStock) Color(0xFFFEF2F2) else MaterialTheme.colorScheme.surface
+                                ),
+                                headlineContent = {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Text(
+                                            text = item.name,
+                                            fontWeight = FontWeight.SemiBold,
+                                            modifier = Modifier.weight(1f, fill = false)
+                                        )
+                                        if (isZeroStock) {
+                                            Badge(
+                                                containerColor = Color(0xFFDC2626),
+                                                contentColor = Color.White
+                                            ) {
+                                                Text(
+                                                    text = "⚠️ STOK HABIS (0)",
+                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                        }
+                                    }
+                                },
                                 supportingContent = {
                                     Column {
                                         Text("Kategori: ${item.category ?: "Umum"}")
                                         Text(
-                                            text = "Stok: ${item.stockQuantity} ${item.unit ?: ""}",
-                                            color = if (item.stockQuantity > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                                            text = if (isZeroStock) "Stok: 0 ${item.unit ?: ""} (HABIS)" else "Stok: ${item.stockQuantity} ${item.unit ?: ""}",
+                                            color = if (item.stockQuantity > 0) MaterialTheme.colorScheme.primary else Color(0xFFDC2626),
                                             fontWeight = if (item.stockQuantity > 0) FontWeight.Normal else FontWeight.Bold
                                         )
                                     }

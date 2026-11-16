@@ -35,7 +35,13 @@ import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
 @Composable
-fun VisitsScreen(viewModel: VisitsViewModel, currentSalesPersonName: String) {
+fun VisitsScreen(
+    viewModel: VisitsViewModel,
+    currentSalesPersonName: String,
+    autoStartCheckIn: Boolean = false,
+    preselectedCustomerId: String? = null,
+    onAutoStartConsumed: () -> Unit = {}
+) {
     val visits by viewModel.visits.collectAsState()
     val customers by viewModel.customers.collectAsState()
     val context = LocalContext.current
@@ -103,10 +109,109 @@ fun VisitsScreen(viewModel: VisitsViewModel, currentSalesPersonName: String) {
         )
     )
 
+    val startCustomerCheckIn: (Customer) -> Unit = { customer ->
+        selectedCustomer = customer
+        scope.launch {
+            isCheckingEligibility = true
+            try {
+                // 1. Check if already visited today
+                val todayVisit = viewModel.getTodayVisitForCustomer(customer.remoteId)
+                if (todayVisit != null) {
+                    alreadyVisitedTodayVisit = todayVisit
+                    return@launch
+                }
+
+                // 2. Get current GPS location
+                val location = locationHelper.getCurrentLocation()
+                if (location == null) {
+                    android.widget.Toast.makeText(context, "Gagal mendapatkan lokasi GPS. Pastikan GPS HP Anda aktif.", android.widget.Toast.LENGTH_LONG).show()
+                    return@launch
+                }
+                currentLocation = location
+
+                // 3. Check customer coordinates (Auto-Lock vs Distance Check)
+                val custLat = customer.latitude
+                val custLng = customer.longitude
+                val hasValidCoords = custLat != null && custLat != 0.0 && custLng != null && custLng != 0.0
+
+                if (!hasValidCoords) {
+                    // Will auto-lock when saving
+                    autoLockCoordsForCustomer = customer
+                    android.widget.Toast.makeText(context, "Outlet belum memiliki koordinat. Lokasi GPS saat ini akan otomatis dikunci.", android.widget.Toast.LENGTH_SHORT).show()
+                    launchCameraForVisit()
+                } else {
+                    // Calculate distance
+                    val results = FloatArray(1)
+                    android.location.Location.distanceBetween(
+                        location.latitude,
+                        location.longitude,
+                        custLat!!,
+                        custLng!!,
+                        results
+                    )
+                    val distanceMeters = results[0]
+
+                    if (distanceMeters > 100.0f) {
+                        // Out of radius warning!
+                        outOfRadiusData = Pair(customer, distanceMeters)
+                    } else {
+                        // Within 100m radius!
+                        launchCameraForVisit()
+                    }
+                }
+            } finally {
+                isCheckingEligibility = false
+            }
+        }
+    }
+
+    val openPickerWithGps: () -> Unit = {
+        if (permissionsState.allPermissionsGranted) {
+            scope.launch {
+                isCapturingLocation = true
+                try {
+                    currentLocation = locationHelper.getCurrentLocation()
+                    showCustomerPicker = true
+                } finally {
+                    isCapturingLocation = false
+                }
+            }
+        } else {
+            permissionsState.launchMultiplePermissionRequest()
+        }
+    }
+
+    LaunchedEffect(autoStartCheckIn, preselectedCustomerId, customers, permissionsState.allPermissionsGranted) {
+        if (!preselectedCustomerId.isNullOrBlank()) {
+            val targetCustomer = customers.find { it.remoteId.equals(preselectedCustomerId, ignoreCase = true) }
+            if (targetCustomer != null) {
+                if (permissionsState.allPermissionsGranted) {
+                    onAutoStartConsumed()
+                    startCustomerCheckIn(targetCustomer)
+                } else {
+                    permissionsState.launchMultiplePermissionRequest()
+                }
+            }
+        } else if (autoStartCheckIn) {
+            if (permissionsState.allPermissionsGranted) {
+                onAutoStartConsumed()
+                isCapturingLocation = true
+                try {
+                    currentLocation = locationHelper.getCurrentLocation()
+                    showCustomerPicker = true
+                } finally {
+                    isCapturingLocation = false
+                }
+            } else {
+                permissionsState.launchMultiplePermissionRequest()
+            }
+        }
+    }
+
     Scaffold(
         topBar = { 
             TopAppBar(
-                title = { Text("Field Visits") },
+                title = { Text("Laporan Kunjungan Lapangan") },
                 actions = {
                     IconButton(onClick = { viewModel.refresh() }) {
                         Icon(Icons.Default.Refresh, contentDescription = "Refresh")
@@ -115,37 +220,41 @@ fun VisitsScreen(viewModel: VisitsViewModel, currentSalesPersonName: String) {
             ) 
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = {
-                if (permissionsState.allPermissionsGranted) {
-                    scope.launch {
-                        isCapturingLocation = true // Reuse state for loading indication
-                        try {
-                            currentLocation = locationHelper.getCurrentLocation()
-                            showCustomerPicker = true
-                        } finally {
-                            isCapturingLocation = false
-                        }
-                    }
-                } else {
-                    permissionsState.launchMultiplePermissionRequest()
-                }
-            }) {
-                Icon(Icons.Default.Add, contentDescription = "Log Visit")
-            }
+            ExtendedFloatingActionButton(
+                onClick = openPickerWithGps,
+                icon = { Icon(Icons.Default.AddAPhoto, contentDescription = "Log Visit") },
+                text = { Text("Check-In Kunjungan") }
+            )
         }
     ) { padding ->
-        LazyColumn(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            items(visits) { visit ->
-                VisitItem(
-                    visit = visit,
-                    onDelete = { viewModel.deleteVisit(visit.id) },
-                    onEditNotes = { newNotes -> viewModel.updateVisitNotes(visit.id, newNotes) }
-                )
-                HorizontalDivider()
+            Button(
+                onClick = openPickerWithGps,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                contentPadding = PaddingValues(vertical = 12.dp)
+            ) {
+                Icon(Icons.Default.AddAPhoto, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("📸 Kirim Laporan Kunjungan Baru (Check-In)", fontWeight = FontWeight.Bold)
+            }
+
+            LazyColumn(
+                modifier = Modifier.fillMaxSize()
+            ) {
+                items(visits) { visit ->
+                    VisitItem(
+                        visit = visit,
+                        onDelete = { viewModel.deleteVisit(visit.id) },
+                        onEditNotes = { newNotes -> viewModel.updateVisitNotes(visit.id, newNotes) }
+                    )
+                    HorizontalDivider()
+                }
             }
         }
 
@@ -155,60 +264,7 @@ fun VisitsScreen(viewModel: VisitsViewModel, currentSalesPersonName: String) {
                 onDismiss = { showCustomerPicker = false },
                 onCustomerSelected = { customer ->
                     showCustomerPicker = false
-                    selectedCustomer = customer
-
-                    scope.launch {
-                        isCheckingEligibility = true
-                        try {
-                            // 1. Check if already visited today
-                            val todayVisit = viewModel.getTodayVisitForCustomer(customer.remoteId)
-                            if (todayVisit != null) {
-                                alreadyVisitedTodayVisit = todayVisit
-                                return@launch
-                            }
-
-                            // 2. Get current GPS location
-                            val location = locationHelper.getCurrentLocation()
-                            if (location == null) {
-                                android.widget.Toast.makeText(context, "Gagal mendapatkan lokasi GPS. Pastikan GPS HP Anda aktif.", android.widget.Toast.LENGTH_LONG).show()
-                                return@launch
-                            }
-                            currentLocation = location
-
-                            // 3. Check customer coordinates (Auto-Lock vs Distance Check)
-                            val custLat = customer.latitude
-                            val custLng = customer.longitude
-                            val hasValidCoords = custLat != null && custLat != 0.0 && custLng != null && custLng != 0.0
-
-                            if (!hasValidCoords) {
-                                // Will auto-lock when saving
-                                autoLockCoordsForCustomer = customer
-                                android.widget.Toast.makeText(context, "Outlet belum memiliki koordinat. Lokasi GPS saat ini akan otomatis dikunci.", android.widget.Toast.LENGTH_SHORT).show()
-                                launchCameraForVisit()
-                            } else {
-                                // Calculate distance
-                                val results = FloatArray(1)
-                                android.location.Location.distanceBetween(
-                                    location.latitude,
-                                    location.longitude,
-                                    custLat!!,
-                                    custLng!!,
-                                    results
-                                )
-                                val distanceMeters = results[0]
-
-                                if (distanceMeters > 100.0f) {
-                                    // Out of radius warning!
-                                    outOfRadiusData = Pair(customer, distanceMeters)
-                                } else {
-                                    // Within 100m radius!
-                                    launchCameraForVisit()
-                                }
-                            }
-                        } finally {
-                            isCheckingEligibility = false
-                        }
-                    }
+                    startCustomerCheckIn(customer)
                 },
                 currentLocation = currentLocation,
                 onCreateNew = { name, address, owner, phone ->

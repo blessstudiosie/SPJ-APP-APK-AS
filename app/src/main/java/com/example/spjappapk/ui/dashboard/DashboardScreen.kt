@@ -274,6 +274,49 @@ fun DashboardScreen(
                     }
                 }
 
+                // Pintasan Cepat Kirim Laporan Kunjungan di Bagian Atas Dashboard
+                Card(
+                    onClick = onNavigateToVisits,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1D4ED8)),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AddAPhoto,
+                            contentDescription = "Kirim Laporan Kunjungan",
+                            tint = Color.White,
+                            modifier = Modifier.size(28.dp)
+                        )
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "📸 Kirim Laporan Kunjungan",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                            Text(
+                                text = "Pintasan pilih toko, cek GPS & foto langsung",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.White.copy(alpha = 0.85f)
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.Default.ChevronRight,
+                            contentDescription = null,
+                            tint = Color.White
+                        )
+                    }
+                }
+
                 SummaryCard(
                     title = if (isManagerOrOwner) "Total Omzet Tim Bulan Ini" else "Omzet Anda Bulan Ini",
                     value = formatCurrency(uiState.monthlyOmzet),

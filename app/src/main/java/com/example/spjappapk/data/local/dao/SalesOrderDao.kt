@@ -18,10 +18,10 @@ interface SalesOrderDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAllOrders(orders: List<SalesOrder>)
 
-    @Query("SELECT * FROM sales_orders WHERE status = 'PENDING'")
+    @Query("SELECT * FROM sales_orders WHERE remote_id IS NULL AND status IN ('PENDING', 'SO')")
     suspend fun getUnsyncedOrders(): List<SalesOrder>
 
-    @Query("SELECT * FROM sales_orders WHERE remote_id IS NOT NULL AND status = 'PROCESSED'")
+    @Query("SELECT * FROM sales_orders WHERE remote_id IS NOT NULL AND status IN ('PROCESSED', 'SO')")
     suspend fun getOrdersAwaitingFeedback(): List<SalesOrder>
 
     @Query("UPDATE sales_orders SET status = :status, remote_id = :remoteId, admin_notes = :notes WHERE id = :id")

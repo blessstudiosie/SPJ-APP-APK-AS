@@ -23,6 +23,7 @@ fun ProductFilterBottomSheet(
 ) {
     var tempCategory by remember { mutableStateOf(initialFilterState.selectedCategory) }
     var tempOnlyStockReady by remember { mutableStateOf(initialFilterState.onlyStockReady) }
+    var tempOnlyZeroStock by remember { mutableStateOf(initialFilterState.onlyZeroStock) }
     var tempMinPriceText by remember { mutableStateOf(initialFilterState.minPrice?.let { if (it % 1.0 == 0.0) it.toLong().toString() else it.toString() } ?: "") }
     var tempMaxPriceText by remember { mutableStateOf(initialFilterState.maxPrice?.let { if (it % 1.0 == 0.0) it.toLong().toString() else it.toString() } ?: "") }
     var tempSortBy by remember { mutableStateOf(initialFilterState.sortBy) }
@@ -75,12 +76,33 @@ fun ProductFilterBottomSheet(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("Hanya Stok Ready", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                    Text("Hanya Stok Ready (> 0)", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                     Text("Sembunyikan produk dengan stok 0", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Switch(
                     checked = tempOnlyStockReady,
-                    onCheckedChange = { tempOnlyStockReady = it }
+                    onCheckedChange = {
+                        tempOnlyStockReady = it
+                        if (it) tempOnlyZeroStock = false
+                    }
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Hanya Stok Habis (= 0)", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                    Text("Tampilkan khusus produk dengan stok 0", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(
+                    checked = tempOnlyZeroStock,
+                    onCheckedChange = {
+                        tempOnlyZeroStock = it
+                        if (it) tempOnlyStockReady = false
+                    }
                 )
             }
 
@@ -160,6 +182,7 @@ fun ProductFilterBottomSheet(
                         val newState = ProductFilterState(
                             selectedCategory = tempCategory,
                             onlyStockReady = tempOnlyStockReady,
+                            onlyZeroStock = tempOnlyZeroStock,
                             minPrice = minP,
                             maxPrice = maxP,
                             sortBy = tempSortBy

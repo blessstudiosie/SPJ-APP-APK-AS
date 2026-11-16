@@ -17,7 +17,8 @@ import java.util.*
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CustomerScreen(
-    viewModel: CustomerViewModel
+    viewModel: CustomerViewModel,
+    onCheckInCustomer: (com.example.spjappapk.data.local.entities.Customer) -> Unit = {}
 ) {
     val customers by viewModel.customers.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
@@ -74,7 +75,8 @@ fun CustomerScreen(
                     items(customers) { customer ->
                         CustomerItem(
                             customer = customer,
-                            onEditClick = { editingCustomer = customer }
+                            onEditClick = { editingCustomer = customer },
+                            onCheckInClick = { onCheckInCustomer(customer) }
                         )
                         HorizontalDivider()
                     }
@@ -130,7 +132,8 @@ fun CustomerScreen(
 @Composable
 fun CustomerItem(
     customer: com.example.spjappapk.data.local.entities.Customer,
-    onEditClick: () -> Unit
+    onEditClick: () -> Unit,
+    onCheckInClick: () -> Unit = {}
 ) {
     ListItem(
         headlineContent = { 
@@ -167,7 +170,7 @@ fun CustomerItem(
             }
         },
         trailingContent = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                 Column(horizontalAlignment = Alignment.End) {
                     if (customer.creditLimit > 0) {
                         Text(
@@ -179,6 +182,19 @@ fun CustomerItem(
                     if (customer.syncStatus == "PENDING") {
                         Icon(Icons.Default.Sync, null, tint = Color(0xFFFFA500), modifier = Modifier.size(16.dp))
                     }
+                }
+                FilledTonalButton(
+                    onClick = onCheckInClick,
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                    modifier = Modifier.height(32.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.LocationOn,
+                        contentDescription = "Kunjungan",
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text("Kunjungan", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
                 }
                 IconButton(onClick = onEditClick) {
                     Icon(

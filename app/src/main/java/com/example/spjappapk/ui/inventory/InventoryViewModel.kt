@@ -26,6 +26,10 @@ class InventoryViewModel(private val repository: InventoryRepository) : ViewMode
         listOf("Semua") + active.mapNotNull { it.category?.trim() }.filter { it.isNotBlank() }.distinct().sorted()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), listOf("Semua"))
 
+    val zeroStockCount: StateFlow<Int> = repository.allInventory.map { list ->
+        list.count { it.status == "Y" && it.stockQuantity <= 0 }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
     val inventoryItems: StateFlow<List<Inventory>> = combine(
         repository.allInventory,
         _searchQuery,
@@ -46,8 +50,10 @@ class InventoryViewModel(private val repository: InventoryRepository) : ViewMode
             result = result.filter { it.category?.trim()?.equals(filter.selectedCategory.trim(), ignoreCase = true) == true }
         }
 
-        // 3. Stock Ready Filter
-        if (filter.onlyStockReady) {
+        // 3. Stock Ready / Zero Stock Filter
+        if (filter.onlyZeroStock) {
+            result = result.filter { it.stockQuantity <= 0 }
+        } else if (filter.onlyStockReady) {
             result = result.filter { it.stockQuantity > 0 }
         }
 

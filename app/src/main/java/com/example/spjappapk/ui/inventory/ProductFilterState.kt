@@ -11,6 +11,7 @@ enum class SortOption(val label: String) {
 data class ProductFilterState(
     val selectedCategory: String? = null, // null = Semua
     val onlyStockReady: Boolean = false,
+    val onlyZeroStock: Boolean = false,
     val minPrice: Double? = null,
     val maxPrice: Double? = null,
     val sortBy: SortOption = SortOption.NAME_ASC
@@ -20,6 +21,7 @@ data class ProductFilterState(
             var count = 0
             if (!selectedCategory.isNullOrBlank() && selectedCategory != "Semua") count++
             if (onlyStockReady) count++
+            if (onlyZeroStock) count++
             if (minPrice != null) count++
             if (maxPrice != null) count++
             if (sortBy != SortOption.NAME_ASC) count++

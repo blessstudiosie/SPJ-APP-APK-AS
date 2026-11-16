@@ -39,6 +39,19 @@ class SalesRepository(
         scheduleSync()
     }
 
+    suspend fun insertOrderWithLocalSoMaster(
+        order: SalesOrder,
+        localSaleMaster: SalesMaster,
+        localDetails: List<SalesDetailEntity>
+    ) {
+        salesOrderDao.insertOrder(order)
+        salesMasterDao.insertSalesMaster(listOf(localSaleMaster))
+        if (localDetails.isNotEmpty()) {
+            salesDetailDao.insertAll(localDetails)
+        }
+        scheduleSync()
+    }
+
     suspend fun refreshSalesPersons(isFullSync: Boolean = false) {
         try {
             val lastUpdate = if (isFullSync) null else salesPersonDao.getMaxUpdatedAt()

@@ -74,6 +74,8 @@ fun HomeScreen(
     val backStack = rememberNavBackStack(Route.Dashboard)
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+    var autoStartVisitCheckIn by remember { mutableStateOf(false) }
+    var preselectedVisitCustomerId by remember { mutableStateOf<String?>(null) }
     
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -366,6 +368,8 @@ fun HomeScreen(
                                 backStack.add(Route.SyncLog)
                             },
                             onNavigateToVisits = {
+                                autoStartVisitCheckIn = true
+                                preselectedVisitCustomerId = null
                                 backStack.clear()
                                 backStack.add(Route.Visits)
                             },
@@ -407,7 +411,14 @@ fun HomeScreen(
                         val viewModel: com.example.spjappapk.ui.customers.CustomerViewModel = viewModel {
                             com.example.spjappapk.ui.customers.CustomerViewModel(app.customerRepository, currentUser)
                         }
-                        com.example.spjappapk.ui.customers.CustomerScreen(viewModel)
+                        com.example.spjappapk.ui.customers.CustomerScreen(
+                            viewModel = viewModel,
+                            onCheckInCustomer = { customer ->
+                                autoStartVisitCheckIn = false
+                                preselectedVisitCustomerId = customer.remoteId
+                                backStack.add(Route.Visits)
+                            }
+                        )
                     }
                     is Route.Sales -> NavEntry(r) {
                         val viewModel: SalesViewModel = viewModel {
@@ -459,7 +470,16 @@ fun HomeScreen(
                         val viewModel: VisitsViewModel = viewModel {
                             VisitsViewModel(app.visitRepository, app.customerRepository, currentUser)
                         }
-                        VisitsScreen(viewModel, currentUser?.name ?: "Unknown")
+                        VisitsScreen(
+                            viewModel = viewModel,
+                            currentSalesPersonName = currentUser?.name ?: "Unknown",
+                            autoStartCheckIn = autoStartVisitCheckIn,
+                            preselectedCustomerId = preselectedVisitCustomerId,
+                            onAutoStartConsumed = {
+                                autoStartVisitCheckIn = false
+                                preselectedVisitCustomerId = null
+                            }
+                        )
                     }
                     is Route.PendingSync -> NavEntry(r) {
                         val viewModel: PendingSyncViewModel = viewModel {
