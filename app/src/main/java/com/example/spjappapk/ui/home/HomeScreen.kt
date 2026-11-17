@@ -124,6 +124,10 @@ fun HomeScreen(
                 val allVisitsForBadge by app.visitRepository.allVisits.collectAsState(initial = emptyList())
                 val allCustomersForBadge by app.customerRepository.allCustomers.collectAsState(initial = emptyList())
                 val allPaymentsForBadge by app.paymentRepository.allPayments.collectAsState(initial = emptyList())
+                val syncLogsForBadge by app.database.syncLogDao().getRecentLogs().collectAsState(initial = emptyList())
+                val syncErrorCount = remember(syncLogsForBadge) {
+                    syncLogsForBadge.count { it.status.equals("ERROR", ignoreCase = true) }
+                }
                 val totalUnsyncedBadgeCount = remember(allOrdersForBadge, allVisitsForBadge, allCustomersForBadge, allPaymentsForBadge) {
                     allOrdersForBadge.count { it.remoteId == null && (it.status == "PENDING" || it.status == "SO") } +
                     allVisitsForBadge.count { it.syncStatus == "PENDING" } +
@@ -230,7 +234,16 @@ fun HomeScreen(
                     modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
                 )
                 NavigationDrawerItem(
-                    label = { Text("Log Sinkronisasi") },
+                    label = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Log Sinkronisasi", modifier = Modifier.weight(1f))
+                            if (syncErrorCount > 0) {
+                                Badge(containerColor = MaterialTheme.colorScheme.error) {
+                                    Text("$syncErrorCount")
+                                }
+                            }
+                        }
+                    },
                     selected = currentRoute == Route.SyncLog,
                     onClick = { 
                         scope.launch { drawerState.close() }
@@ -322,6 +335,10 @@ fun HomeScreen(
                 val allVisitsForBadge by app.visitRepository.allVisits.collectAsState(initial = emptyList())
                 val allCustomersForBadge by app.customerRepository.allCustomers.collectAsState(initial = emptyList())
                 val allPaymentsForBadge by app.paymentRepository.allPayments.collectAsState(initial = emptyList())
+                val syncLogsForBadge by app.database.syncLogDao().getRecentLogs().collectAsState(initial = emptyList())
+                val syncErrorCount = remember(syncLogsForBadge) {
+                    syncLogsForBadge.count { it.status.equals("ERROR", ignoreCase = true) }
+                }
                 val totalUnsyncedBadgeCount = remember(allOrdersForBadge, allVisitsForBadge, allCustomersForBadge, allPaymentsForBadge) {
                     allOrdersForBadge.count { it.remoteId == null && (it.status == "PENDING" || it.status == "SO") } +
                     allVisitsForBadge.count { it.syncStatus == "PENDING" } +
@@ -352,7 +369,21 @@ fun HomeScreen(
                     },
                     navigationIcon = {
                         IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                            Icon(Icons.Default.Menu, "Open Menu")
+                            BadgedBox(
+                                badge = {
+                                    if (syncErrorCount > 0) {
+                                        Badge(containerColor = MaterialTheme.colorScheme.error) {
+                                            Text("$syncErrorCount")
+                                        }
+                                    } else if (totalUnsyncedBadgeCount > 0) {
+                                        Badge {
+                                            Text("$totalUnsyncedBadgeCount")
+                                        }
+                                    }
+                                }
+                            ) {
+                                Icon(Icons.Default.Menu, "Open Menu")
+                            }
                         }
                     }
                 )
