@@ -107,8 +107,19 @@ class AuthViewModel(
                 _user.value = savedUser
             }
         } catch (e: Exception) {
-            // Offline fallback: use saved session
-            _user.value = savedUser
+            // Offline fallback: cek juga status aktif/resign di database lokal Room agar user resign tetap terblokir walau offline
+            val localSp = try {
+                salesPersonDao?.getSalesPersonById(savedUser.id)
+            } catch (_: Exception) {
+                null
+            }
+            if (localSp != null && (!localSp.isActive || localSp.employmentStatus.equals("RESIGN", ignoreCase = true))) {
+                sessionManager.clearSession()
+                _user.value = null
+                _error.value = "Sesi Anda telah berakhir karena akun ini berstatus Resign / nonaktif."
+            } else {
+                _user.value = savedUser
+            }
         } finally {
             _isInitialLoading.value = false
         }

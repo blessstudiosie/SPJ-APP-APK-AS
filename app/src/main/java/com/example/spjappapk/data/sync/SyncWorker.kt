@@ -140,6 +140,34 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             android.util.Log.d("SyncWorker", "doWork() started")
             logSync("General", "INFO", "Starting sync work...")
 
+            // 0. Guard: pastikan user yang sedang login belum berstatus Resign / nonaktif
+            val activeSessionUser = app.sessionManager.userFlow.firstOrNull()
+            if (activeSessionUser != null) {
+                val isDeactivatedOnServer = try {
+                    val spResp = SupabaseClient.client.postgrest["sales_persons"].select {
+                        filter { eq("id", activeSessionUser.id) }
+                    }
+                    val spArr = Json.parseToJsonElement(spResp.data).jsonArray
+                    if (spArr.isNotEmpty()) {
+                        val obj = spArr[0].jsonObject
+                        val activeFlag = obj["is_active"]?.toString()?.toBooleanStrictOrNull() ?: true
+                        val empStatus = obj["employment_status"]?.toString()?.removeSurrounding("\"") ?: ""
+                        !activeFlag || empStatus.equals("RESIGN", ignoreCase = true)
+                    } else {
+                        false
+                    }
+                } catch (_: Exception) {
+                    val localSp = database.salesPersonDao().getSalesPersonById(activeSessionUser.id)
+                    localSp != null && (!localSp.isActive || localSp.employmentStatus.equals("RESIGN", ignoreCase = true))
+                }
+
+                if (isDeactivatedOnServer) {
+                    app.sessionManager.clearSession()
+                    logSync("General", "ERROR", "Akun ${activeSessionUser.name} berstatus Resign/Nonaktif. Akses & sinkronisasi diblokir.")
+                    return Result.failure()
+                }
+            }
+
             // 1. PUSH: Sync New Customers first (To avoid FK errors in visits/orders)
             val unsyncedCustomers = customerDao.getUnsyncedCustomers()
             if (unsyncedCustomers.isNotEmpty()) {
