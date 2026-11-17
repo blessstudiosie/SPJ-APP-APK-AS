@@ -491,6 +491,25 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                 app.inventoryRepository.refreshInventory()
                 app.customerRepository.refreshCustomers()
                 app.salesRepository.refreshSalesPersons()
+
+                // Lepaskan salesPersonId/salesPersonName pada konsumen lokal jika sales terkait berstatus RESIGN
+                try {
+                    val localSps = database.salesPersonDao().getAllSalesPersons().firstOrNull() ?: emptyList()
+                    val resignedIds = localSps.filter { !it.isActive || it.employmentStatus.equals("RESIGN", ignoreCase = true) }
+                        .map { it.id.lowercase() }.toSet()
+                    val resignedNames = localSps.filter { !it.isActive || it.employmentStatus.equals("RESIGN", ignoreCase = true) }
+                        .map { it.name.trim().lowercase() }.toSet()
+                    if (resignedIds.isNotEmpty() || resignedNames.isNotEmpty()) {
+                        val localCusts = customerDao.getAllCustomers().firstOrNull() ?: emptyList()
+                        val toClear = localCusts.filter {
+                            (!it.salesPersonId.isNullOrBlank() && it.salesPersonId.lowercase() in resignedIds) ||
+                            (!it.salesPersonName.isNullOrBlank() && it.salesPersonName.trim().lowercase() in resignedNames)
+                        }.map { it.copy(salesPersonId = null, salesPersonName = null) }
+                        if (toClear.isNotEmpty()) {
+                            customerDao.insertAll(toClear)
+                        }
+                    }
+                } catch (_: Exception) { }
                 
                 val currentUser = app.sessionManager.userFlow.firstOrNull()
                 if (currentUser != null) {
