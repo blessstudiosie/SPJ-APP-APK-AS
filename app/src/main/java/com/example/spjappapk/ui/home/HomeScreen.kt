@@ -158,19 +158,6 @@ fun HomeScreen(
                     modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
                 )
                 NavigationDrawerItem(
-                    label = { Text("Pembayaran (Payments)") },
-                    selected = currentRoute == Route.AllPayments,
-                    onClick = { 
-                        scope.launch { drawerState.close() }
-                        if (currentRoute != Route.AllPayments) {
-                            backStack.clear()
-                            backStack.add(Route.AllPayments)
-                        }
-                    },
-                    icon = { Icon(Icons.Default.Payments, null) },
-                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
-                )
-                NavigationDrawerItem(
                     label = { Text("Kunjungan Lapangan") },
                     selected = currentRoute == Route.Visits,
                     onClick = { 
