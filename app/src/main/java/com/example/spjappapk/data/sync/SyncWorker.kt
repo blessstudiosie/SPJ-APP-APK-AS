@@ -240,6 +240,12 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                 try {
                     val checkInDateIso = com.example.spjappapk.util.DateTimeUtil.getUtcIsoFormat().format(java.util.Date(visit.timestamp))
 
+                    // Tetapkan dan simpan UUID deterministik sebelum push agar tidak pernah double di Supabase saat retry
+                    val visitUuid = visit.remoteId?.takeIf { it.isNotBlank() } ?: java.util.UUID.randomUUID().toString()
+                    if (visit.remoteId.isNullOrBlank()) {
+                        visitDao.updateSyncStatus(visit.id, "PENDING", visitUuid)
+                    }
+
                     // Pastikan customer_id & customer_name sudah terdaftar di tabel customers Supabase (mencegah error FK 23503)
                     val (resolvedCustomerId, resolvedCustomerName) = ensureCustomerExistsOnServer(
                         customerId = visit.customerId,
@@ -251,6 +257,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                     )
 
                     val insertData = buildJsonObject {
+                        put("id", visitUuid)
                         put("sales_person_id", visit.userId)
                         put("sales_person", visit.salesPersonName)
                         if (!resolvedCustomerId.isNullOrBlank()) {
@@ -272,7 +279,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                     }
 
                     val response = try {
-                        SupabaseClient.client.postgrest["check_in_logs"].insert(insertData) {
+                        SupabaseClient.client.postgrest["check_in_logs"].upsert(insertData) {
                             select()
                         }
                     } catch (fkEx: Exception) {
@@ -280,6 +287,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                         if (errMsg.contains("23503") || errMsg.contains("foreign key")) {
                             // Fallback: null-kan FK yang bermasalah (customer_id & customer_name keduanya punya FK ke tabel customers)
                             val fallbackData = buildJsonObject {
+                                put("id", visitUuid)
                                 if (!errMsg.contains("sales_person_id")) {
                                     put("sales_person_id", visit.userId)
                                 } else {
@@ -297,7 +305,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                                 put("notes", "[Toko: ${visit.customerName}] ${visit.notes ?: ""}".trim())
                                 put("check_in_date", checkInDateIso)
                             }
-                            SupabaseClient.client.postgrest["check_in_logs"].insert(fallbackData) {
+                            SupabaseClient.client.postgrest["check_in_logs"].upsert(fallbackData) {
                                 select()
                             }
                         } else {
@@ -306,11 +314,13 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                     }
 
                     val insertedData = Json.parseToJsonElement(response.data).jsonArray
-                    if (insertedData.isNotEmpty()) {
-                        val remoteId = insertedData[0].jsonObject["id"]?.toString()?.replace("\"", "")
-                        visitDao.updateSyncStatus(visit.id, "SUCCESS", remoteId)
-                        logSync("Visits", "SUCCESS", "Check-in for ${visit.customerName} recorded")
+                    val finalRemoteId = if (insertedData.isNotEmpty()) {
+                        insertedData[0].jsonObject["id"]?.toString()?.replace("\"", "") ?: visitUuid
+                    } else {
+                        visitUuid
                     }
+                    visitDao.updateSyncStatus(visit.id, "SUCCESS", finalRemoteId)
+                    logSync("Visits", "SUCCESS", "Check-in for ${visit.customerName} recorded")
                 } catch (e: Exception) {
                     logSync("Visits", "ERROR", "Failed to sync check-in for ${visit.customerName}: ${e.message}")
                     e.printStackTrace()
