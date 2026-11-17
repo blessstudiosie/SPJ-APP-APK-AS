@@ -3,19 +3,14 @@ import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 
-fun getGitCommitCount(): Int = try {
-    val process = ProcessBuilder("git", "rev-list", "--count", "HEAD")
-        .directory(rootProject.projectDir)
-        .redirectErrorStream(true)
-        .start()
-    val output = process.inputStream.bufferedReader().readText().trim()
-    process.waitFor()
-    output.toIntOrNull() ?: 18
+val autoVersionCode = try {
+    providers.exec {
+        commandLine("git", "rev-list", "--count", "HEAD")
+        isIgnoreExitValue = true
+    }.standardOutput.asText.get().trim().toIntOrNull()?.coerceAtLeast(6) ?: 19
 } catch (_: Exception) {
-    18
+    19
 }
-
-val autoVersionCode = getGitCommitCount().coerceAtLeast(6)
 val autoVersionName = "1.4.$autoVersionCode"
 
 plugins {
