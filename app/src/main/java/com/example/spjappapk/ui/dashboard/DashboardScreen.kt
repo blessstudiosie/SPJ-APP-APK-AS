@@ -589,32 +589,6 @@ fun DashboardScreen(
 
                 Spacer(modifier = Modifier.height(24.dp))
                 
-                Text(
-                    text = "Akses Cepat",
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(bottom = 12.dp)
-                )
-                
-                Card(
-                    onClick = onNavigateToVisits,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.LocationOn, null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Column {
-                            Text("Kirim Laporan Kunjungan", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                            Text("Check-in lokasi & foto sekarang", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f))
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(32.dp))
-                
                 Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                     Text(
                         text = "Aplikasi SPJ v${com.example.spjappapk.BuildConfig.VERSION_NAME}",
