@@ -327,10 +327,6 @@ fun HomeScreen(
     ) {
         Scaffold(
             topBar = {
-                TopAppBar(
-                    title = {
-                        val currentRoute = backStack.last()
-                val unreadCount by app.database.notificationDao().getUnreadCount().collectAsState(initial = 0)
                 val allOrdersForBadge by app.salesRepository.allSales.collectAsState(initial = emptyList())
                 val allVisitsForBadge by app.visitRepository.allVisits.collectAsState(initial = emptyList())
                 val allCustomersForBadge by app.customerRepository.allCustomers.collectAsState(initial = emptyList())
@@ -345,6 +341,9 @@ fun HomeScreen(
                     allCustomersForBadge.count { it.syncStatus == "PENDING" } +
                     allPaymentsForBadge.count { !it.isSynced }
                 }
+                TopAppBar(
+                    title = {
+                        val currentRoute = backStack.last()
                         Text(when(currentRoute) {
                             is Route.Dashboard -> "Dashboard"
                             is Route.TodayVisitsDetail -> "Rincian Kunjungan"
