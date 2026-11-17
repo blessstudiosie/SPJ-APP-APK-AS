@@ -2,6 +2,7 @@ package com.example.spjappapk.ui.sales
 
 import android.widget.Toast
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -42,20 +43,63 @@ fun SalesLedgerScreen(
     val isRemoteLoading by viewModel.isRemoteLoading.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     
-    var showQueueSheet by remember { mutableStateOf(false) }
+    var selectedStatusFilter by remember { mutableStateOf("SEMUA") }
     var selectedSaleForReceipt by remember { mutableStateOf<SalesMaster?>(null) }
     var selectedSaleItems by remember { mutableStateOf<List<SalesOrderItem>?>(null) }
 
-    val totalQueueCount = remember(salesGrouped) {
-        salesGrouped.values.sumOf { it.size }
+    // Gabungkan order lokal yang belum sempat ter-pull ke SalesMaster ke dalam 1 daftar utama berstatus SO
+    val unifiedSales = remember(finalizedSales, salesGrouped) {
+        val existingIds = finalizedSales.map { it.id.lowercase() }.toSet()
+        val localPendingAsMaster = salesGrouped.values.flatten()
+            .filter { order ->
+                val rid = order.remoteId?.lowercase()
+                rid == null || rid !in existingIds
+            }
+            .map { order ->
+                val rawNotes = order.notes ?: ""
+                val notaLabel = rawNotes.substringBefore(" | ").trim()
+                    .takeIf { it.startsWith("SO-", ignoreCase = true) }
+                    ?: "SO-LOKAL"
+                SalesMaster(
+                    id = order.remoteId ?: "local-${order.id}",
+                    nota = notaLabel,
+                    orderDate = order.timestamp,
+                    customerId = order.customerId,
+                    customerName = order.customerName,
+                    totalAmount = order.totalAmount,
+                    salesPersonId = order.salesPersonId,
+                    salesName = order.salesPersonName,
+                    status = "SO"
+                )
+            }
+        (localPendingAsMaster + finalizedSales).sortedByDescending { it.orderDate }
+    }
+
+    val filteredSales = remember(unifiedSales, selectedStatusFilter) {
+        if (selectedStatusFilter == "SEMUA") {
+            unifiedSales
+        } else {
+            unifiedSales.filter { it.status.trim().equals(selectedStatusFilter, ignoreCase = true) }
+        }
     }
 
     LaunchedEffect(selectedSaleForReceipt?.id) {
         val currentSale = selectedSaleForReceipt
         if (currentSale != null) {
             selectedSaleItems = null
-            if (currentSale.nota != "PENDING") {
+            if (!currentSale.id.startsWith("local-") && currentSale.nota != "PENDING") {
                 selectedSaleItems = viewModel.getSalesDetailsWithNames(currentSale.id)
+            } else {
+                val localOrder = salesGrouped.values.flatten().find {
+                    ("local-${it.id}" == currentSale.id) || (it.remoteId == currentSale.id)
+                }
+                if (localOrder != null) {
+                    selectedSaleItems = try {
+                        Json.decodeFromString<List<SalesOrderItem>>(localOrder.details)
+                    } catch (_: Exception) {
+                        emptyList()
+                    }
+                }
             }
         } else {
             selectedSaleItems = null
@@ -65,17 +109,8 @@ fun SalesLedgerScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Penjualan Master") },
+                title = { Text("Penjualan") },
                 actions = {
-                    IconButton(onClick = { showQueueSheet = true }) {
-                        BadgedBox(badge = {
-                            if (totalQueueCount > 0) {
-                                Badge { Text("$totalQueueCount") }
-                            }
-                        }) {
-                            Icon(Icons.Default.HourglassEmpty, contentDescription = "Lihat Antrean")
-                        }
-                    }
                     IconButton(onClick = { viewModel.fetchFinalizedSales() }) {
                         Icon(Icons.Default.Refresh, contentDescription = "Refresh Remote")
                     }
@@ -91,39 +126,13 @@ fun SalesLedgerScreen(
         }
     ) { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize()) {
-            // Action Buttons Bar (Lihat Antrean & Tambah Pesanan)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedButton(
-                    onClick = { showQueueSheet = true },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(Icons.Default.HourglassEmpty, null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Antrean ($totalQueueCount)")
-                }
-
-                Button(
-                    onClick = onNavigateToAddOrder,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(Icons.Default.Add, null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Tambah Order")
-                }
-            }
-
             // Search Bar
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { viewModel.updateSearchQuery(it) },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
                 placeholder = { Text("Cari No Nota, Pelanggan, atau Sales...") },
                 leadingIcon = { Icon(Icons.Default.Search, null) },
                 singleLine = true,
@@ -136,20 +145,43 @@ fun SalesLedgerScreen(
                 }
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            // Filter Status Nota (Semua penjualan di 1 tempat dipisahkan berdasarkan status nota)
+            val statusOptions = listOf("SEMUA", "SO", "ON PROSES", "DALAM PENGIRIMAN", "TEMPO", "DONE")
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                statusOptions.forEach { st ->
+                    val count = if (st == "SEMUA") unifiedSales.size else unifiedSales.count { it.status.trim().equals(st, ignoreCase = true) }
+                    val label = if (st == "SEMUA") "Semua ($count)" else "$st ($count)"
+                    FilterChip(
+                        selected = selectedStatusFilter == st,
+                        onClick = { selectedStatusFilter = st },
+                        label = { Text(label) }
+                    )
+                }
+            }
 
-            // Direct Finalized Sales List
-            if (isRemoteLoading && finalizedSales.isEmpty()) {
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // Direct Unified Sales List
+            if (isRemoteLoading && unifiedSales.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
                 }
-            } else if (finalizedSales.isEmpty()) {
+            } else if (filteredSales.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("Tidak ada data penjualan final")
+                    Text(
+                        if (selectedStatusFilter == "SEMUA") "Tidak ada data penjualan"
+                        else "Tidak ada nota berstatus $selectedStatusFilter"
+                    )
                 }
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(finalizedSales) { sale ->
+                    items(filteredSales) { sale ->
                         RemoteSaleItem(
                             sale = sale,
                             onDownloadClick = {
@@ -164,30 +196,6 @@ fun SalesLedgerScreen(
             }
         }
 
-        // BottomSheet to display Queue Orders
-        if (showQueueSheet) {
-            QueueOrdersBottomSheet(
-                salesGrouped = salesGrouped,
-                onDismiss = { showQueueSheet = false },
-                onOrderClick = { order ->
-                    selectedSaleForReceipt = SalesMaster(
-                        id = order.remoteId ?: "local-${order.id}",
-                        nota = order.remoteId ?: "PENDING",
-                        orderDate = order.timestamp,
-                        customerName = order.customerName,
-                        totalAmount = order.totalAmount,
-                        salesName = order.salesPersonName,
-                        status = order.status
-                    )
-                    try {
-                        selectedSaleItems = Json.decodeFromString<List<SalesOrderItem>>(order.details)
-                    } catch (e: Exception) {
-                        selectedSaleItems = emptyList()
-                    }
-                }
-            )
-        }
-
         // Receipt Dialog
         if (selectedSaleForReceipt != null) {
             ReceiptDialog(
@@ -198,77 +206,6 @@ fun SalesLedgerScreen(
                     selectedSaleItems = null
                 }
             )
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun QueueOrdersBottomSheet(
-    salesGrouped: Map<String, List<SalesOrder>>,
-    onDismiss: () -> Unit,
-    onOrderClick: (SalesOrder) -> Unit
-) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Data Antrean Pesanan (Queue)",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
-                )
-                IconButton(onClick = onDismiss) {
-                    Icon(Icons.Default.Close, contentDescription = "Tutup")
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            if (salesGrouped.isEmpty()) {
-                Box(
-                    modifier = Modifier.fillMaxWidth().height(180.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("Tidak ada antrean pesanan aktif saat ini.")
-                }
-            } else {
-                LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 450.dp)) {
-                    salesGrouped.forEach { (status, orders) ->
-                        item {
-                            Surface(
-                                modifier = Modifier.fillMaxWidth(),
-                                color = MaterialTheme.colorScheme.secondaryContainer
-                            ) {
-                                Text(
-                                    text = "Status: $status (${orders.size} Order)",
-                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                                    style = MaterialTheme.typography.labelLarge,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSecondaryContainer
-                                )
-                            }
-                        }
-                        items(orders) { order ->
-                            SaleItem(
-                                order = order,
-                                onClick = {
-                                    onOrderClick(order)
-                                    onDismiss()
-                                }
-                            )
-                            HorizontalDivider()
-                        }
-                    }
-                }
-            }
         }
     }
 }
