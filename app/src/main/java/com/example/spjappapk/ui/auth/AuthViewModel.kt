@@ -109,7 +109,7 @@ class AuthViewModel(
         } catch (e: Exception) {
             // Offline fallback: cek juga status aktif/resign di database lokal Room agar user resign tetap terblokir walau offline
             val localSp = try {
-                salesPersonDao?.getSalesPersonById(savedUser.id)
+                salesPersonDao?.getAllSalesPersons()?.firstOrNull()?.find { it.id == savedUser.id }
             } catch (_: Exception) {
                 null
             }

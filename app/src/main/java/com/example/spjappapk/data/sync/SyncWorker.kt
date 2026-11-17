@@ -157,7 +157,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                         false
                     }
                 } catch (_: Exception) {
-                    val localSp = database.salesPersonDao().getSalesPersonById(activeSessionUser.id)
+                    val localSp = database.salesPersonDao().getAllSalesPersons().firstOrNull()?.find { it.id == activeSessionUser.id }
                     localSp != null && (!localSp.isActive || localSp.employmentStatus.equals("RESIGN", ignoreCase = true))
                 }
 
