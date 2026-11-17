@@ -3,6 +3,21 @@ import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 
+fun getGitCommitCount(): Int = try {
+    val process = ProcessBuilder("git", "rev-list", "--count", "HEAD")
+        .directory(rootProject.projectDir)
+        .redirectErrorStream(true)
+        .start()
+    val output = process.inputStream.bufferedReader().readText().trim()
+    process.waitFor()
+    output.toIntOrNull() ?: 18
+} catch (_: Exception) {
+    18
+}
+
+val autoVersionCode = getGitCommitCount().coerceAtLeast(6)
+val autoVersionName = "1.4.$autoVersionCode"
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -19,11 +34,11 @@ android {
         applicationId = "com.example.spjappapk"
         minSdk = 24
         targetSdk = 37
-        versionCode = 5
-        versionName = "1.4"
+        versionCode = autoVersionCode
+        versionName = autoVersionName
 
         val sdf = SimpleDateFormat("dd/MM/yy HH:mm", Locale.getDefault())
-        sdf.timeZone = TimeZone.getTimeZone("UTC")
+        sdf.timeZone = TimeZone.getTimeZone("Asia/Makassar")
         val timestamp = sdf.format(Date())
         buildConfigField("String", "BUILD_TIME", "\"$timestamp\"")
 
@@ -51,7 +66,7 @@ android {
 }
 
 base {
-    archivesName.set("SPJ_App_v1.4")
+    archivesName.set("SPJ_App_v$autoVersionName")
 }
 
 dependencies {
