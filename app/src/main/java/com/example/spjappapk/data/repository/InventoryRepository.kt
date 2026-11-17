@@ -54,7 +54,6 @@ class InventoryRepository(
         } catch (e: Exception) {
             val errorMsg = e.localizedMessage ?: "Unknown Error"
             syncLogDao.insert(SyncLog(event = "Inventory", status = "ERROR", message = "Gagal akses server: $errorMsg"))
-            throw e
         }
     }
 

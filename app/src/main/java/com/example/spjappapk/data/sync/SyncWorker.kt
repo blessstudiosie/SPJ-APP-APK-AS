@@ -516,9 +516,12 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             // 6. PULL: Refresh Master Data AFTER all local offline changes have been pushed
             try {
                 android.util.Log.d("SyncWorker", "Refreshing master data after push...")
-                app.inventoryRepository.refreshInventory()
-                app.customerRepository.refreshCustomers()
-                app.salesRepository.refreshSalesPersons()
+                runCatching { app.inventoryRepository.refreshInventory() }
+                    .onFailure { logSync("Inventory", "ERROR", "Gagal tarik produk: ${it.message}") }
+                runCatching { app.customerRepository.refreshCustomers() }
+                    .onFailure { logSync("Customers", "ERROR", "Gagal tarik pelanggan: ${it.message}") }
+                runCatching { app.salesRepository.refreshSalesPersons() }
+                    .onFailure { logSync("SalesPersons", "ERROR", "Gagal tarik pegawai: ${it.message}") }
 
                 // Lepaskan salesPersonId/salesPersonName pada konsumen lokal jika sales terkait berstatus RESIGN
                 try {

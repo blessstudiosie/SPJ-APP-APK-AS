@@ -9,6 +9,7 @@ import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
 import kotlinx.serialization.json.Json
 import java.util.concurrent.TimeUnit
+import kotlin.time.Duration.Companion.seconds
 
 object SupabaseClient {
     private const val SUPABASE_URL = "https://ntvyrjrqxpmecqogolni.supabase.co"
@@ -26,6 +27,7 @@ object SupabaseClient {
                 supabaseUrl = SUPABASE_URL,
                 supabaseKey = SUPABASE_ANON_KEY
             ) {
+                requestTimeout = 90.seconds
                 httpEngine = OkHttp.create {
                     config {
                         connectTimeout(60, TimeUnit.SECONDS)
